@@ -1,0 +1,2 @@
+kmeans_k,banana_cluster_score_threshold,banana_opening_kernel,banana_closing_kernel,blemish_kmeans_k,blemish_cluster_chroma_threshold,darkness_threshold,blemish_opening_kernel,blemish_closing_kernel
+7,0.35,3,7,6,21.0,32.0,3,3

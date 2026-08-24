@@ -1,0 +1,6 @@
+numpy>=1.26
+opencv-python>=4.8
+pandas>=2.0
+streamlit>=1.37
+streamlit-drawable-canvas-fix==0.9.8
+Pillow>=10.0

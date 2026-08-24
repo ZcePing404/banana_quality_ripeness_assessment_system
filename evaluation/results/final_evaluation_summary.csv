@@ -1,0 +1,2 @@
+images,kmeans_k,banana_cluster_score_threshold,banana_opening_kernel,banana_closing_kernel,blemish_kmeans_k,blemish_cluster_chroma_threshold,darkness_threshold,blemish_opening_kernel,blemish_closing_kernel,banana_mean_iou,banana_mean_dice,blemish_mean_iou,blemish_mean_dice,blemish_percentage_mae
+9,7,0.35,3,7,6,21.0,32.0,3,3,0.9311570455962614,0.963538232710024,0.32653623242975627,0.45430255312377515,6.227841317254221
