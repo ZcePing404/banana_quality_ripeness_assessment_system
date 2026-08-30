@@ -38,9 +38,10 @@ def render_image_input():
         )
 
         st.info(
-            "Capture setup for more reliable blemish/shadow separation: use a plain "
-            "background, keep the camera position fixed, and use soft/diffuse light from "
-            "both sides of the banana. Avoid one strong directional lamp or direct glare."
+            "Capture setup: use a plain background, keep the camera position fixed, and "
+            "use soft/diffuse light from both sides of the banana. Keep the complete banana "
+            "near the centre of the frame because the ripeness model converts the captured "
+            "image to a centred 224×224 square. Avoid one strong directional lamp or direct glare."
         )
 
         camera_index = st.selectbox(
@@ -87,7 +88,8 @@ def render_image_input():
             used_index = st.session_state.get("usb_captured_index", "?")
 
             st.success(
-                "Frame captured. This frozen image is now used for banana/blemish analysis."
+                "Frame captured. This frozen image is now used for banana segmentation, "
+                "blemish analysis, and ripeness classification."
             )
             st.image(
                 cv2.cvtColor(image, cv2.COLOR_BGR2RGB),

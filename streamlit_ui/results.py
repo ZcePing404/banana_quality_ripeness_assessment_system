@@ -9,21 +9,46 @@ import streamlit as st
 from banana_quality.visualisation import overlay_result
 
 
-def render_results(image, result, *, is_mode_a: bool, banana_opening: int, banana_closing: int,
+def render_results(image, result, *, ripeness_result: dict[str, object] | None = None,
+                   is_mode_a: bool, banana_opening: int, banana_closing: int,
                    blemish_opening: int, blemish_closing: int) -> None:
-    """Render the original metrics, output images, processing stages and details."""
+    """Render ripeness, surface-quality outputs, processing stages and details."""
     prepared = result["prepared"]
     banana_steps = result["banana_steps"]
     blemish_steps = result["blemish_steps"]
     overlay = overlay_result(image, result["banana_mask"], result["blemish_mask"])
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Blemish area", f"{result['blemish_percentage']:.2f}%")
-    m2.metric("Surface quality", result["quality_grade"])
-    if is_mode_a:
-        m3.metric("Selected K-means clusters", str(prepared["selected_clusters"]))
+    # Main user-facing assessment combines the ML ripeness output with the
+    # existing classical blemish/surface-quality output.
+    m1, m2, m3, m4 = st.columns(4)
+
+    if ripeness_result and bool(ripeness_result.get("available")):
+        ripeness_name = str(ripeness_result.get("class_name", "Unknown"))
+        confidence = float(ripeness_result.get("confidence", 0.0))
+        m1.metric("Ripeness", ripeness_name)
+        m2.metric("Ripeness confidence", f"{confidence * 100:.1f}%")
     else:
-        m3.metric("Banana segmentation", "ROI + GrabCut")
+        m1.metric("Ripeness", "Unavailable")
+        m2.metric("Ripeness confidence", "—")
+
+    m3.metric("Blemish area", f"{result['blemish_percentage']:.2f}%")
+    m4.metric("Surface quality", result["quality_grade"])
+
+    if is_mode_a:
+        st.caption(
+            f"Banana segmentation: automatic K-means; selected clusters: "
+            f"{prepared['selected_clusters']}"
+        )
+    else:
+        st.caption("Banana segmentation: user ROI + GrabCut")
+
+    if not ripeness_result or not bool(ripeness_result.get("available")):
+        message = (
+            str(ripeness_result.get("error"))
+            if ripeness_result
+            else "Ripeness classification result is unavailable."
+        )
+        st.warning(message)
 
     st.subheader("Final output")
     c1, c2, c3, c4 = st.columns(4)
@@ -31,6 +56,26 @@ def render_results(image, result, *, is_mode_a: bool, banana_opening: int, banan
     c2.image(result["banana_mask"], caption="Banana mask", use_container_width=True)
     c3.image(result["blemish_mask"], caption="Blemish mask", use_container_width=True)
     c4.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption="Overlay", use_container_width=True)
+
+    if ripeness_result and bool(ripeness_result.get("available")):
+        with st.expander("Ripeness prediction details", expanded=True):
+            st.caption(
+                "The Teachable Machine classifier uses the same full image supplied to "
+                "the app. For the USB camera, this is the frozen frame created by "
+                "**Capture current frame**."
+            )
+
+            probabilities = dict(ripeness_result.get("probabilities", {}))
+            for class_name, probability in sorted(
+                probabilities.items(),
+                key=lambda item: float(item[1]),
+                reverse=True,
+            ):
+                probability = max(0.0, min(1.0, float(probability)))
+                label_col, bar_col, value_col = st.columns([1.2, 4.0, 0.9])
+                label_col.write(str(class_name))
+                bar_col.progress(probability)
+                value_col.write(f"{probability * 100:.1f}%")
 
     with st.expander("Show processing stages", expanded=True):
         if is_mode_a:
