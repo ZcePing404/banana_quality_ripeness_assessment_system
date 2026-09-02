@@ -36,11 +36,19 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
 
     if is_mode_a:
         st.caption(
-            f"Banana segmentation: automatic K-means; selected clusters: "
-            f"{prepared['selected_clusters']}"
+            f"Surface-quality segmentation: automatic K-means; "
+            f"selected clusters: {prepared['selected_clusters']}"
         )
     else:
-        st.caption("Banana segmentation: user ROI + GrabCut")
+        st.caption(
+            "Surface-quality segmentation: user ROI + GrabCut"
+        )
+
+    st.caption(
+        "Ripeness classification uses its own fixed banana-segmentation "
+        "pipeline so that Streamlit preprocessing matches the segmented "
+        "training, validation and test datasets."
+    )
 
     if not ripeness_result or not bool(ripeness_result.get("available")):
         message = (
@@ -58,14 +66,50 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
     c4.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption="Overlay", use_container_width=True)
 
     if ripeness_result and bool(ripeness_result.get("available")):
-        with st.expander("Ripeness prediction details", expanded=True):
+        with st.expander(
+                "Ripeness prediction details",
+                expanded=True
+        ):
             st.caption(
-                "The Teachable Machine classifier uses the same full image supplied to "
-                "the app. For the USB camera, this is the frozen frame created by "
-                "**Capture current frame**."
+                "The image below is the segmented image that is actually "
+                "sent to the ripeness classifier."
             )
 
-            probabilities = dict(ripeness_result.get("probabilities", {}))
+            segmented_image = ripeness_result.get(
+                "segmented_image"
+            )
+
+            ripeness_mask = ripeness_result.get(
+                "banana_mask"
+            )
+
+            if segmented_image is not None:
+                r1, r2 = st.columns(2)
+
+                r1.image(
+                    cv2.cvtColor(
+                        segmented_image,
+                        cv2.COLOR_BGR2RGB
+                    ),
+                    caption="Image sent to ripeness classifier",
+                    use_container_width=True,
+                )
+
+                if ripeness_mask is not None:
+                    r2.image(
+                        ripeness_mask,
+                        caption="Ripeness segmentation mask",
+                        use_container_width=True,
+                    )
+
+            st.markdown("#### Class probabilities")
+
+            probabilities = dict(
+                ripeness_result.get(
+                    "probabilities",
+                    {}
+                )
+            )
             for class_name, probability in sorted(
                 probabilities.items(),
                 key=lambda item: float(item[1]),
