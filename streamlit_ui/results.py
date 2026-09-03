@@ -10,7 +10,7 @@ from banana_quality.visualisation import overlay_result
 
 
 def render_results(image, result, *, ripeness_result: dict[str, object] | None = None,
-                   is_mode_a: bool, banana_opening: int, banana_closing: int,
+                   banana_opening: int, banana_closing: int,
                    blemish_opening: int, blemish_closing: int) -> None:
     """Render ripeness, surface-quality outputs, processing stages and details."""
     prepared = result["prepared"]
@@ -18,8 +18,6 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
     blemish_steps = result["blemish_steps"]
     overlay = overlay_result(image, result["banana_mask"], result["blemish_mask"])
 
-    # Main user-facing assessment combines the ML ripeness output with the
-    # existing classical blemish/surface-quality output.
     m1, m2, m3, m4 = st.columns(4)
 
     if ripeness_result and bool(ripeness_result.get("available")):
@@ -34,15 +32,10 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
     m3.metric("Blemish area", f"{result['blemish_percentage']:.2f}%")
     m4.metric("Surface quality", result["quality_grade"])
 
-    if is_mode_a:
-        st.caption(
-            f"Surface-quality segmentation: automatic K-means; "
-            f"selected clusters: {prepared['selected_clusters']}"
-        )
-    else:
-        st.caption(
-            "Surface-quality segmentation: user ROI + GrabCut"
-        )
+    st.caption(
+        f"Surface-quality segmentation: automatic K-means; "
+        f"selected clusters: {prepared['selected_clusters']}"
+    )
 
     st.caption(
         "Ripeness classification uses its own fixed banana-segmentation "
@@ -66,35 +59,22 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
     c4.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption="Overlay", use_container_width=True)
 
     if ripeness_result and bool(ripeness_result.get("available")):
-        with st.expander(
-                "Ripeness prediction details",
-                expanded=True
-        ):
+        with st.expander("Ripeness prediction details", expanded=True):
             st.caption(
                 "The image below is the segmented image that is actually "
                 "sent to the ripeness classifier."
             )
 
-            segmented_image = ripeness_result.get(
-                "segmented_image"
-            )
-
-            ripeness_mask = ripeness_result.get(
-                "banana_mask"
-            )
+            segmented_image = ripeness_result.get("segmented_image")
+            ripeness_mask = ripeness_result.get("banana_mask")
 
             if segmented_image is not None:
                 r1, r2 = st.columns(2)
-
                 r1.image(
-                    cv2.cvtColor(
-                        segmented_image,
-                        cv2.COLOR_BGR2RGB
-                    ),
+                    cv2.cvtColor(segmented_image, cv2.COLOR_BGR2RGB),
                     caption="Image sent to ripeness classifier",
                     use_container_width=True,
                 )
-
                 if ripeness_mask is not None:
                     r2.image(
                         ripeness_mask,
@@ -103,13 +83,7 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
                     )
 
             st.markdown("#### Class probabilities")
-
-            probabilities = dict(
-                ripeness_result.get(
-                    "probabilities",
-                    {}
-                )
-            )
+            probabilities = dict(ripeness_result.get("probabilities", {}))
             for class_name, probability in sorted(
                 probabilities.items(),
                 key=lambda item: float(item[1]),
@@ -122,29 +96,49 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
                 value_col.write(f"{probability * 100:.1f}%")
 
     with st.expander("Show processing stages", expanded=True):
-        if is_mode_a:
-            r1 = st.columns(4)
-            r1[0].image(cv2.cvtColor(prepared["working_image"], cv2.COLOR_BGR2RGB), caption="1. Standardised image", use_container_width=True)
-            r1[1].image(cv2.cvtColor(prepared["blurred"], cv2.COLOR_BGR2RGB), caption="2. Gaussian blur", use_container_width=True)
-            r1[2].image(cv2.cvtColor(prepared["kmeans_quantised_bgr"], cv2.COLOR_BGR2RGB), caption=f"3. Whole-image K-means (K={result['kmeans_k']})", use_container_width=True)
-            r1[3].image(prepared["banana_colour_prior"], caption="4. Banana-colour prior", use_container_width=True)
-            r2 = st.columns(4)
-            r2[0].image(prepared["banana_likelihood_map"], caption="5. Cluster banana-likelihood", use_container_width=True)
-            r2[1].image(prepared["raw_banana_candidate"], caption="6. Raw K-means banana candidate", use_container_width=True)
-            r2[2].image(banana_steps["banana_opened"], caption=f"7. Opening ({banana_opening}x{banana_opening})", use_container_width=True)
-            r2[3].image(banana_steps["banana_closed"], caption=f"8. Closing ({banana_closing}x{banana_closing})", use_container_width=True)
-        else:
-            r1 = st.columns(4)
-            r1[0].image(cv2.cvtColor(prepared["working_image"], cv2.COLOR_BGR2RGB), caption="1. Standardised image", use_container_width=True)
-            r1[1].image(cv2.cvtColor(prepared["blurred"], cv2.COLOR_BGR2RGB), caption="2. Gaussian blur", use_container_width=True)
-            r1[2].image(cv2.cvtColor(prepared["grabcut_rectangle_preview"], cv2.COLOR_BGR2RGB), caption="3. User-drawn ROI", use_container_width=True)
-            r1[3].image(cv2.cvtColor(prepared["grabcut_initial_label_colour"], cv2.COLOR_BGR2RGB), caption="4. Initial GrabCut guidance", use_container_width=True)
-            r2 = st.columns(4)
-            r2[0].image(cv2.cvtColor(prepared["grabcut_final_label_colour"], cv2.COLOR_BGR2RGB), caption="5. GrabCut labels after optimisation", use_container_width=True)
-            r2[1].image(prepared["raw_banana_candidate"], caption="6. Raw GrabCut foreground mask", use_container_width=True)
-            r2[2].image(cv2.cvtColor(prepared["grabcut_foreground_preview"], cv2.COLOR_BGR2RGB), caption="7. Foreground isolated by GrabCut", use_container_width=True)
-            r2[3].image(banana_steps["banana_mask"], caption="8. Final banana mask", use_container_width=True)
-            st.caption("Mode B does not run K-means for banana segmentation and does not apply banana opening/closing morphology.")
+        r1 = st.columns(4)
+        r1[0].image(
+            cv2.cvtColor(prepared["working_image"], cv2.COLOR_BGR2RGB),
+            caption="1. Standardised image",
+            use_container_width=True,
+        )
+        r1[1].image(
+            cv2.cvtColor(prepared["blurred"], cv2.COLOR_BGR2RGB),
+            caption="2. Gaussian blur",
+            use_container_width=True,
+        )
+        r1[2].image(
+            cv2.cvtColor(prepared["kmeans_quantised_bgr"], cv2.COLOR_BGR2RGB),
+            caption=f"3. Whole-image K-means (K={result['kmeans_k']})",
+            use_container_width=True,
+        )
+        r1[3].image(
+            prepared["banana_colour_prior"],
+            caption="4. Banana-colour prior",
+            use_container_width=True,
+        )
+
+        r2 = st.columns(4)
+        r2[0].image(
+            prepared["banana_likelihood_map"],
+            caption="5. Cluster banana-likelihood",
+            use_container_width=True,
+        )
+        r2[1].image(
+            prepared["raw_banana_candidate"],
+            caption="6. Raw K-means banana candidate",
+            use_container_width=True,
+        )
+        r2[2].image(
+            banana_steps["banana_opened"],
+            caption=f"7. Opening ({banana_opening}x{banana_opening})",
+            use_container_width=True,
+        )
+        r2[3].image(
+            banana_steps["banana_closed"],
+            caption=f"8. Closing ({banana_closing}x{banana_closing})",
+            use_container_width=True,
+        )
 
         st.markdown("### Blemish processing: second-stage K-means inside banana")
 
@@ -172,25 +166,10 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
             "blemish region just because it is darker."
         )
 
-    if is_mode_a:
-        with st.expander("K-means cluster details"):
-            df = pd.DataFrame(prepared["cluster_summary"])
-            st.dataframe(df, use_container_width=True)
-            st.caption("These clusters are used only to build the Mode A banana mask.")
-    else:
-        with st.expander("How Mode B works"):
-            st.markdown(
-                """
-                **Mode B uses no K-means for banana segmentation.**
-
-                1. Draw an ROI around the banana.
-                2. Pixels outside the ROI start as definite background.
-                3. Pixels inside the ROI start as possible foreground.
-                4. GrabCut learns foreground/background colour models and refines the boundary.
-                5. The largest connected foreground object is retained and holes are filled.
-                6. Blemish detection runs inside the resulting banana mask and uses its own second-stage K-means.
-                """
-            )
+    with st.expander("K-means cluster details"):
+        df = pd.DataFrame(prepared["cluster_summary"])
+        st.dataframe(df, use_container_width=True)
+        st.caption("These clusters are used to build the automatic banana mask.")
 
     with st.expander("Blemish second-stage K-means cluster details"):
         blemish_df = pd.DataFrame(blemish_steps["blemish_cluster_summary"])

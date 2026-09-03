@@ -1,0 +1,2 @@
+accuracy,macro_precision,macro_recall,macro_f1,correct,incorrect,total
+0.7875,0.8468468468468467,0.8583333333333334,0.8106377053745475,63,17,80

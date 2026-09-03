@@ -28,10 +28,6 @@ class ProcessingConfig:
     banana_opening_kernel: int = 3
     banana_closing_kernel: int = 7
 
-    # ---------- Assisted GrabCut ----------
-    # More iterations may refine the cut slightly but also take more time.
-    grabcut_iterations: int = 5
-
     # ---------- Blemish detection ----------
     # Main idea:
     #   1) Run a SECOND K-means only inside the final banana mask.
@@ -50,13 +46,13 @@ class ProcessingConfig:
     blemish_cluster_chroma_threshold: float = 21.0
 
     # Supplemental pixel evidence.
-    darkness_threshold: float = 32.0
+    darkness_threshold: float = 36.0
     hue_drop_threshold: float = 7.0
     strong_hue_drop_threshold: float = 10.0
     redness_threshold: float = 11.0
     yellow_loss_threshold: float = 20.0
 
-    # Hue is unstable in low-saturation pixels, while bright highlights can
+    # Hue is unstable in low-saturation p   ixels, while bright highlights can
     # lose yellow chroma and otherwise look like damage.
     blemish_min_saturation: float = 35.0
     highlight_value_threshold: float = 220.0

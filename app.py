@@ -15,19 +15,17 @@ from streamlit_ui.controls import render_sidebar
 from streamlit_ui.input_section import render_image_input
 from streamlit_ui.results import render_results
 from streamlit_ui.ripeness import classify_ripeness_for_ui
-from streamlit_ui.roi import render_grabcut_roi
 
 
 st.title("Banana Quality and Ripeness Assessment")
 st.caption(
-    "Mode A uses K-means for automatic banana segmentation. Mode B uses a "
-    "user-drawn ROI with GrabCut. Both modes share the blemish detector, and "
-    "the same uploaded or camera-captured image is also classified as "
-    "Unripe, Ripe, or Overripe by the Teachable Machine model."
+    "Automatic K-means is used to create the banana mask for surface-quality "
+    "analysis. Blemishes are then detected inside that mask, while the same "
+    "uploaded or camera-captured image is also classified as Unripe, Ripe, "
+    "or Overripe by the Teachable Machine model."
 )
 
 settings = render_sidebar()
-is_mode_a = bool(settings["is_mode_a"])
 
 image, input_source = render_image_input()
 
@@ -42,10 +40,6 @@ if image is None:
         )
     st.stop()
 
-grabcut_roi_percent = None
-if not is_mode_a:
-    grabcut_roi_percent = render_grabcut_roi(image)
-
 config = replace(
     ProcessingConfig(),
     banana_cluster_score_threshold=float(settings["banana_score_threshold"]),
@@ -57,9 +51,7 @@ config = replace(
 with st.spinner("Analysing banana..."):
     result = analyse_image(
         image,
-        segmentation_mode="mode_a" if is_mode_a else "mode_b",
         kmeans_k=int(settings["kmeans_k"]),
-        grabcut_roi_percent=grabcut_roi_percent,
         banana_opening_kernel=int(settings["banana_opening"]),
         banana_closing_kernel=int(settings["banana_closing"]),
         blemish_opening_kernel=int(settings["blemish_opening"]),
@@ -75,7 +67,6 @@ render_results(
     image,
     result,
     ripeness_result=ripeness_result,
-    is_mode_a=is_mode_a,
     banana_opening=int(settings["banana_opening"]),
     banana_closing=int(settings["banana_closing"]),
     blemish_opening=int(settings["blemish_opening"]),

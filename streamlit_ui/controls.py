@@ -8,12 +8,7 @@ from banana_quality.config import ProcessingConfig
 
 
 def load_defaults() -> dict[str, int | float]:
-    """Read Streamlit starting values from ``ProcessingConfig``.
-
-    This keeps the validated/tuned defaults in one place. After parameter
-    tuning, edit ``banana_quality/config.py`` and the sliders will start from
-    those values the next time the app is launched.
-    """
+    """Read Streamlit starting values from ``ProcessingConfig``."""
     config = ProcessingConfig()
     return {
         "kmeans_k": int(config.kmeans_k),
@@ -34,80 +29,59 @@ def kernel_slider(label: str, default: int, help_text: str) -> int:
 
 
 def render_sidebar() -> dict[str, object]:
-    """Render banana-mask and blemish controls."""
+    """Render K-means banana-mask and blemish controls."""
     definitions = load_defaults()
 
     with st.sidebar:
-        st.header("Banana segmentation")
-        mode_label = st.radio(
-            "Choose mode",
-            ["Mode A - Automatic K-means", "Mode B - ROI + GrabCut"],
-            help="Mode A is automatic. Mode B uses one user-drawn ROI rectangle.",
-        )
+        st.header("Banana Segmentation")
+        st.caption("Automatic K-means segmentation")
 
-    is_mode_a = mode_label.startswith("Mode A")
-
-    # ------------------------------------------------------------------
-    # Banana mask settings
-    # ------------------------------------------------------------------
-    with st.sidebar:
         st.divider()
         st.header("Banana Mask Settings")
 
-        if is_mode_a:
-            kmeans_k = st.slider(
-                "K-means colour clusters (K)",
-                3,
-                30,
-                int(definitions["kmeans_k"]),
-                1,
-                help=(
-                    "Usage: Sets the number of Lab colour groups used to separate the banana from the image.\n\n"
-                    "Increase: Finer colour separation, but the mask may become fragmented.\n\n"
-                    "Decrease: Broader colour groups, but banana and similar background colours may merge."
-                ),
-            )
-            banana_score_threshold = st.slider(
-                "Banana cluster acceptance",
-                0.20,
-                0.80,
-                float(definitions["banana_cluster_score_threshold"]),
-                0.05,
-                help=(
-                    "Usage: Sets how banana-like a K-means cluster must be before it is included in the banana mask.\n\n"
-                    "Increase: Stricter selection; removes more background but may remove real banana regions.\n\n"
-                    "Decrease: More permissive selection; keeps more banana regions but may include background."
-                ),
-            )
-            banana_opening = kernel_slider(
-                "Banana opening kernel",
-                int(definitions["banana_opening_kernel"]),
-                (
-                    "Usage: Removes small foreground noise from the banana mask. 1x1 disables opening.\n\n"
-                    "Increase: Removes larger small/noisy regions but may erase thin banana parts.\n\n"
-                    "Decrease: Preserves more banana detail but also keeps more noise."
-                ),
-            )
-            banana_closing = kernel_slider(
-                "Banana closing kernel",
-                int(definitions["banana_closing_kernel"]),
-                (
-                    "Usage: Fills small gaps and reconnects broken areas in the banana mask. 1x1 disables closing.\n\n"
-                    "Increase: Fills larger gaps but may join unwanted nearby regions.\n\n"
-                    "Decrease: Changes the mask less but may leave small gaps or holes."
-                ),
-            )
-        else:
-            # Ignored by the pipeline in Mode B; banana morphology is intentionally skipped.
-            kmeans_k = int(definitions["kmeans_k"])
-            banana_score_threshold = float(definitions["banana_cluster_score_threshold"])
-            banana_opening = 1
-            banana_closing = 1
-            st.caption("Draw one ROI around the complete banana after loading the image.")
+        kmeans_k = st.slider(
+            "K-means colour clusters (K)",
+            3,
+            30,
+            int(definitions["kmeans_k"]),
+            1,
+            help=(
+                "Usage: Sets the number of Lab colour groups used to separate the banana from the image.\n\n"
+                "Increase: Finer colour separation, but the mask may become fragmented.\n\n"
+                "Decrease: Broader colour groups, but banana and similar background colours may merge."
+            ),
+        )
+        banana_score_threshold = st.slider(
+            "Banana cluster acceptance",
+            0.20,
+            0.80,
+            float(definitions["banana_cluster_score_threshold"]),
+            0.05,
+            help=(
+                "Usage: Sets how banana-like a K-means cluster must be before it is included in the banana mask.\n\n"
+                "Increase: Stricter selection; removes more background but may remove real banana regions.\n\n"
+                "Decrease: More permissive selection; keeps more banana regions but may include background."
+            ),
+        )
+        banana_opening = kernel_slider(
+            "Banana opening kernel",
+            int(definitions["banana_opening_kernel"]),
+            (
+                "Usage: Removes small foreground noise from the banana mask. 1x1 disables opening.\n\n"
+                "Increase: Removes larger small/noisy regions but may erase thin banana parts.\n\n"
+                "Decrease: Preserves more banana detail but also keeps more noise."
+            ),
+        )
+        banana_closing = kernel_slider(
+            "Banana closing kernel",
+            int(definitions["banana_closing_kernel"]),
+            (
+                "Usage: Fills small gaps and reconnects broken areas in the banana mask. 1x1 disables closing.\n\n"
+                "Increase: Fills larger gaps but may join unwanted nearby regions.\n\n"
+                "Decrease: Changes the mask less but may leave small gaps or holes."
+            ),
+        )
 
-        # --------------------------------------------------------------
-        # Blemish settings: K-means detection + morphology in one section
-        # --------------------------------------------------------------
         st.divider()
         st.header("Blemish Settings")
 
@@ -135,18 +109,9 @@ def render_sidebar() -> dict[str, object]:
                 "Decrease: More sensitive detection; finds smaller colour changes but may add false positives."
             ),
         )
-        darkness_threshold = st.slider(
-            "Dark blemish threshold",
-            10.0,
-            50.0,
-            float(definitions["darkness_threshold"]),
-            2.0,
-            help=(
-                "Usage: Sets how much darker a region must be than healthy peel for dark-blemish Rule A.\n\n"
-                "Increase: Requires darker damage and reduces shadow false positives.\n\n"
-                "Decrease: Detects lighter dark spots but may classify more shadows as blemishes."
-            ),
-        )
+        # Keep the tuned darkness threshold fixed internally instead of exposing
+        # it as a user-facing control. app.py can continue reading the same key.
+        darkness_threshold = float(definitions["darkness_threshold"])
         blemish_opening = kernel_slider(
             "Blemish opening kernel",
             int(definitions["blemish_opening_kernel"]),
@@ -167,7 +132,6 @@ def render_sidebar() -> dict[str, object]:
         )
 
     return {
-        "is_mode_a": is_mode_a,
         "kmeans_k": kmeans_k,
         "banana_score_threshold": banana_score_threshold,
         "banana_opening": banana_opening,
