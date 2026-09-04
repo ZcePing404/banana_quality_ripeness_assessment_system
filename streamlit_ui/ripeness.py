@@ -11,20 +11,13 @@ from machine_learning.ripeness_classification.predictor import (
     load_ripeness_model,
     predict_ripeness,
 )
-
-from machine_learning.ripeness_classification.segmentation import (
-    segment_banana,
-)
+from machine_learning.ripeness_classification.segmentation import apply_banana_mask
 
 
 # ============================================================
 # MODEL PATH
 # ============================================================
 
-# ripeness.py is inside:
-# project_root/streamlit_ui/ripeness.py
-#
-# Therefore parents[1] gives the project root.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 SEGMENTED_MODEL_DIR = (
@@ -35,15 +28,8 @@ SEGMENTED_MODEL_DIR = (
     / "segmented"
 )
 
-MODEL_PATH = (
-    SEGMENTED_MODEL_DIR
-    / "keras_model.h5"
-)
-
-LABELS_PATH = (
-    SEGMENTED_MODEL_DIR
-    / "labels.txt"
-)
+MODEL_PATH = SEGMENTED_MODEL_DIR / "keras_model.h5"
+LABELS_PATH = SEGMENTED_MODEL_DIR / "labels.txt"
 
 
 # ============================================================
@@ -55,15 +41,8 @@ def _load_cached_model(
     model_path: str,
     labels_path: str,
 ):
-    """
-    Load the Teachable Machine model only once
-    for the current Streamlit process.
-    """
-
-    return load_ripeness_model(
-        model_path,
-        labels_path,
-    )
+    """Load the Teachable Machine model once per Streamlit process."""
+    return load_ripeness_model(model_path, labels_path)
 
 
 # ============================================================
@@ -72,123 +51,61 @@ def _load_cached_model(
 
 def classify_ripeness_for_ui(
     image_bgr: np.ndarray,
+    banana_mask: np.ndarray,
 ) -> dict[str, object]:
-    """
-    Classify one banana image.
+    """Classify ripeness using the SAME banana mask as blemish analysis.
 
-    Pipeline:
+    Streamlit pipeline::
 
         Original image
             ↓
-        Banana segmentation
+        Shared K-means banana mask from analyse_image()
+        (K follows the current Streamlit slider value)
             ↓
-        Background removal
+        Replace pixels outside that mask with white
             ↓
         Segmented Teachable Machine model
             ↓
         Unripe / Ripe / Overripe
 
-    The same segment_banana() function is used to create
-    the segmented train, validation and test datasets.
+    No second K-means segmentation and no GrabCut are run here.
     """
 
-    # --------------------------------------------------------
-    # 1. Check that the segmented model exists
-    # --------------------------------------------------------
-
     if not MODEL_PATH.exists():
-
         return {
             "available": False,
-            "error": (
-                "Segmented ripeness model was not found at: "
-                f"{MODEL_PATH}"
-            ),
+            "error": f"Segmented ripeness model was not found at: {MODEL_PATH}",
         }
 
     if not LABELS_PATH.exists():
-
         return {
             "available": False,
-            "error": (
-                "Segmented model labels were not found at: "
-                f"{LABELS_PATH}"
-            ),
+            "error": f"Segmented model labels were not found at: {LABELS_PATH}",
         }
 
-    # --------------------------------------------------------
-    # 2. Check input image
-    # --------------------------------------------------------
-
-    if (
-        image_bgr is None
-        or image_bgr.size == 0
-    ):
-
+    if image_bgr is None or image_bgr.size == 0:
         return {
             "available": False,
-            "error": (
-                "Ripeness classification received "
-                "an empty image."
-            ),
+            "error": "Ripeness classification received an empty image.",
+        }
+
+    if banana_mask is None or np.asarray(banana_mask).size == 0:
+        return {
+            "available": False,
+            "error": "Ripeness classification received an empty banana mask.",
         }
 
     try:
-
-        # ====================================================
-        # 3. SEGMENT THE BANANA
-        # ====================================================
-
-        # This is the EXACT SAME function used by
-        # segment_dataset.py to generate:
-        #
-        # data/segmented/train
-        # data/segmented/valid
-        # data/segmented/test
-
-        segmented_image, banana_mask = (
-            segment_banana(image_bgr)
+        # Reuse the final K-means mask already produced for blemish analysis.
+        segmented_image, shared_mask = apply_banana_mask(
+            image_bgr,
+            banana_mask,
         )
-
-        if (
-            segmented_image is None
-            or segmented_image.size == 0
-        ):
-            raise ValueError(
-                "Banana segmentation produced "
-                "an empty image."
-            )
-
-        if (
-            banana_mask is None
-            or banana_mask.size == 0
-        ):
-            raise ValueError(
-                "Banana segmentation produced "
-                "an empty mask."
-            )
-
-        # ====================================================
-        # 4. LOAD SEGMENTED MODEL
-        # ====================================================
 
         model, labels = _load_cached_model(
             str(MODEL_PATH.resolve()),
             str(LABELS_PATH.resolve()),
         )
-
-        # ====================================================
-        # 5. CLASSIFY THE SEGMENTED IMAGE
-        # ====================================================
-
-        # IMPORTANT:
-        #
-        # Previously this was:
-        #
-        # predict_ripeness(image_bgr, ...)
-        #
-        # Now the classifier receives the segmented image
-        # because that is what this model was trained on.
 
         prediction = predict_ripeness(
             segmented_image,
@@ -196,34 +113,16 @@ def classify_ripeness_for_ui(
             labels,
         )
 
-        # ====================================================
-        # 6. RETURN RESULT TO STREAMLIT
-        # ====================================================
-
         return {
             "available": True,
-
-            "model_path":
-                str(MODEL_PATH),
-
-            # Keep these temporarily.
-            # They are useful for checking that Streamlit
-            # uses the correct segmentation.
-            "segmented_image":
-                segmented_image,
-
-            "banana_mask":
-                banana_mask,
-
+            "model_path": str(MODEL_PATH),
+            "segmented_image": segmented_image,
+            "banana_mask": shared_mask,
             **prediction,
         }
 
     except Exception as exc:
-
         return {
             "available": False,
-            "error": (
-                "Ripeness classification could not run: "
-                f"{exc}"
-            ),
+            "error": f"Ripeness classification could not run: {exc}",
         }

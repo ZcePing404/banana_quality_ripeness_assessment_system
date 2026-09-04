@@ -38,9 +38,8 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
     )
 
     st.caption(
-        "Ripeness classification uses its own fixed banana-segmentation "
-        "pipeline so that Streamlit preprocessing matches the segmented "
-        "training, validation and test datasets."
+        "The same final K-means banana mask is shared by blemish analysis "
+        "and ripeness classification. Changing K updates both branches."
     )
 
     if not ripeness_result or not bool(ripeness_result.get("available")):
@@ -78,7 +77,7 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
                 if ripeness_mask is not None:
                     r2.image(
                         ripeness_mask,
-                        caption="Ripeness segmentation mask",
+                        caption="Shared banana mask",
                         use_container_width=True,
                     )
 

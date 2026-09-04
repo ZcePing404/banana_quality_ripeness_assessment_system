@@ -19,10 +19,9 @@ from streamlit_ui.ripeness import classify_ripeness_for_ui
 
 st.title("Banana Quality and Ripeness Assessment")
 st.caption(
-    "Automatic K-means is used to create the banana mask for surface-quality "
-    "analysis. Blemishes are then detected inside that mask, while the same "
-    "uploaded or camera-captured image is also classified as Unripe, Ripe, "
-    "or Overripe by the Teachable Machine model."
+    "K-means creates one shared banana mask using the current sidebar K value. "
+    "That same mask is used for blemish analysis and to prepare the banana "
+    "image for Teachable Machine ripeness classification."
 )
 
 settings = render_sidebar()
@@ -59,9 +58,12 @@ with st.spinner("Analysing banana..."):
         config=config,
     )
 
-    # The exact same image variable comes from either file upload or the frozen
-    # USB-camera frame, so both input paths automatically receive a ripeness result.
-    ripeness_result = classify_ripeness_for_ui(image)
+    # Reuse the exact final banana mask produced above.  The K slider therefore
+    # affects one shared mask that feeds BOTH blemish and ripeness analysis.
+    ripeness_result = classify_ripeness_for_ui(
+        image,
+        banana_mask=result["banana_mask"],
+    )
 
 render_results(
     image,

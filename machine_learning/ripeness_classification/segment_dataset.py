@@ -2,7 +2,10 @@ from pathlib import Path
 
 import cv2
 
-from segmentation import segment_banana
+try:
+    from .segmentation import segment_banana
+except ImportError:  # Allows: python segment_dataset.py
+    from segmentation import segment_banana
 
 
 # ============================================================

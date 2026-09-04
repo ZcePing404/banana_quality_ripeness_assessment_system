@@ -1,415 +1,147 @@
+"""Banana segmentation helpers for ripeness-classification preprocessing.
+
+This module now reuses the project's shared K-means banana-mask algorithm.
+GrabCut and the old fixed ``K = 4`` preprocessing have been removed.
+
+For Streamlit, the banana mask is created once by the surface-quality pipeline
+using the current sidebar K value.  That exact mask is then applied here so
+both blemish analysis and ripeness classification use the same banana region.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
 import cv2
 import numpy as np
 
+from banana_quality.config import ProcessingConfig
+from banana_quality.segmentation.kmeans import prepare_image
+from banana_quality.segmentation.mask_refinement import banana_mask_from_prepared
+from banana_quality.surface_quality import _resize_mask_to_original
 
-K = 4
-KMEANS_ATTEMPTS = 10
+
 BACKGROUND_VALUE = 255
 
 
-def preprocess_image(image_bgr):
-    """
-    Apply light smoothing before segmentation.
+def _normalise_mask(mask: np.ndarray, image_shape: tuple[int, int]) -> np.ndarray:
+    """Return a single-channel uint8 mask aligned with the source image."""
+    if mask is None or np.asarray(mask).size == 0:
+        raise ValueError("Banana mask is empty.")
 
-    The Gaussian filter reduces small colour variations/noise
-    that may cause unnecessary K-means clusters.
-    """
-    blurred = cv2.GaussianBlur(
-        image_bgr,
-        (5, 5),
-        0
-    )
+    mask_array = np.asarray(mask)
 
-    return blurred
+    if mask_array.ndim == 3:
+        mask_array = cv2.cvtColor(mask_array.astype(np.uint8), cv2.COLOR_BGR2GRAY)
+    elif mask_array.ndim != 2:
+        raise ValueError("Banana mask must be a 2-D binary mask.")
 
-def run_kmeans(image_bgr, k=4):
-    """
-    Cluster image pixels according to colour using K-means.
-
-    LAB colour space is used because it separates brightness
-    from colour information better than raw BGR.
-    """
-
-    lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
-
-    height, width = lab.shape[:2]
-
-    pixels = lab.reshape((-1, 3))
-    pixels = np.float32(pixels)
-
-    criteria = (
-        cv2.TERM_CRITERIA_EPS +
-        cv2.TERM_CRITERIA_MAX_ITER,
-        100,
-        0.2
-    )
-
-    _, labels, centers = cv2.kmeans(
-        pixels,
-        k,
-        None,
-        criteria,
-        KMEANS_ATTEMPTS,
-        cv2.KMEANS_PP_CENTERS
-    )
-
-    label_image = labels.reshape((height, width))
-
-    return label_image, centers
-
-def choose_banana_cluster(image_bgr, label_image, k):
-    """
-    Select the K-means cluster that most likely belongs
-    to the banana.
-
-    The score considers:
-
-    1. Banana-like hue (green/yellow/brown range)
-    2. Saturation
-    3. Presence near the image centre
-    4. Penalty for clusters dominating the image border
-
-    This helps avoid selecting plain backgrounds.
-    """
-
-    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-
-    height, width = image_bgr.shape[:2]
-
-    # Central region of image.
-    x1 = int(width * 0.20)
-    x2 = int(width * 0.80)
-
-    y1 = int(height * 0.20)
-    y2 = int(height * 0.80)
-
-    # Border region.
-    border_width = max(3, int(min(height, width) * 0.04))
-
-    border_mask = np.zeros((height, width), dtype=np.uint8)
-
-    border_mask[:border_width, :] = 1
-    border_mask[-border_width:, :] = 1
-    border_mask[:, :border_width] = 1
-    border_mask[:, -border_width:] = 1
-
-    best_cluster = None
-    best_score = -999999
-
-    for cluster_id in range(k):
-
-        cluster_mask = label_image == cluster_id
-
-        pixel_count = np.count_nonzero(cluster_mask)
-
-        if pixel_count == 0:
-            continue
-
-        area_ratio = pixel_count / (height * width)
-
-        hsv_pixels = hsv[cluster_mask]
-
-        mean_h = float(np.mean(hsv_pixels[:, 0]))
-        mean_s = float(np.mean(hsv_pixels[:, 1]))
-        mean_v = float(np.mean(hsv_pixels[:, 2]))
-
-        # ----------------------------------------------------
-        # Banana colour score
-        # ----------------------------------------------------
-
-        colour_score = 0
-
-        # Brown / yellow / green ranges commonly appearing
-        # on bananas at different ripeness stages.
-        if 5 <= mean_h <= 85:
-            colour_score += 4
-
-        if mean_s >= 40:
-            colour_score += 2
-
-        if mean_v >= 40:
-            colour_score += 1
-
-        # ----------------------------------------------------
-        # Centrality score
-        # ----------------------------------------------------
-
-        centre_pixels = np.count_nonzero(
-            cluster_mask[y1:y2, x1:x2]
+    target_height, target_width = image_shape
+    if mask_array.shape != (target_height, target_width):
+        mask_array = cv2.resize(
+            mask_array,
+            (target_width, target_height),
+            interpolation=cv2.INTER_NEAREST,
         )
 
-        centre_ratio = centre_pixels / max(pixel_count, 1)
+    return np.where(mask_array > 0, 255, 0).astype(np.uint8)
 
-        # ----------------------------------------------------
-        # Border penalty
-        # ----------------------------------------------------
 
-        border_pixels = np.count_nonzero(
-            cluster_mask & (border_mask == 1)
-        )
+def remove_background(
+    image_bgr: np.ndarray,
+    banana_mask: np.ndarray,
+    *,
+    background_value: int = BACKGROUND_VALUE,
+) -> np.ndarray:
+    """Keep banana pixels and replace all pixels outside the mask with white."""
+    if image_bgr is None or image_bgr.size == 0:
+        raise ValueError("Cannot apply a banana mask to an empty image.")
 
-        border_ratio = border_pixels / max(pixel_count, 1)
-
-        # ----------------------------------------------------
-        # Area constraint
-        # ----------------------------------------------------
-
-        area_score = 0
-
-        if 0.03 <= area_ratio <= 0.85:
-            area_score = 2
-        else:
-            area_score = -3
-
-        # ----------------------------------------------------
-        # Final score
-        # ----------------------------------------------------
-
-        score = (
-            colour_score
-            + (centre_ratio * 5)
-            - (border_ratio * 5)
-            + area_score
-        )
-
-        if score > best_score:
-            best_score = score
-            best_cluster = cluster_id
-
-    return best_cluster
-
-def create_banana_mask(label_image, banana_cluster):
-    """
-    Convert the selected cluster into a binary mask.
-    """
-
-    mask = np.zeros(
-        label_image.shape,
-        dtype=np.uint8
-    )
-
-    mask[label_image == banana_cluster] = 255
-
-    return mask
-
-def clean_mask(mask):
-    """
-    Clean the K-means mask using morphological operations.
-
-    Opening:
-        removes isolated noise.
-
-    Closing:
-        reconnects small gaps within the banana region.
-    """
-
-    opening_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (3, 3)
-    )
-
-    closing_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (7, 7)
-    )
-
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_OPEN,
-        opening_kernel,
-        iterations=1
-    )
-
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_CLOSE,
-        closing_kernel,
-        iterations=2
-    )
-
-    return mask
-
-def keep_largest_object(mask):
-    """
-    Keep the largest connected contour.
-
-    This is useful because your classification experiment
-    currently assumes one primary banana in each image.
-    """
-
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    if not contours:
-        return mask
-
-    largest_contour = max(
-        contours,
-        key=cv2.contourArea
-    )
-
-    final_mask = np.zeros_like(mask)
-
-    cv2.drawContours(
-        final_mask,
-        [largest_contour],
-        -1,
-        255,
-        thickness=cv2.FILLED
-    )
-
-    return final_mask
-
-def remove_background(image_bgr, mask):
-    """
-    Keep banana pixels and replace everything else
-    with a fixed white background.
-    """
-
-    output = np.full_like(
-        image_bgr,
-        BACKGROUND_VALUE
-    )
-
-    output[mask == 255] = image_bgr[mask == 255]
-
+    mask = _normalise_mask(banana_mask, image_bgr.shape[:2])
+    output = np.full_like(image_bgr, int(background_value))
+    output[mask > 0] = image_bgr[mask > 0]
     return output
 
-def refine_mask_with_grabcut(image_bgr, initial_mask):
+
+def apply_banana_mask(
+    image_bgr: np.ndarray,
+    banana_mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply an already-computed shared banana mask for ripeness input.
+
+    This is the function used by Streamlit.  It does not run another K-means
+    pass and it does not use GrabCut.  Therefore the ripeness classifier sees
+    the same banana boundary used by blemish analysis.
     """
-    Refine the K-means mask using GrabCut.
+    if image_bgr is None or image_bgr.size == 0:
+        raise ValueError("Cannot prepare an empty image for ripeness classification.")
 
-    K-means identifies the approximate banana region.
-    GrabCut then expands/refines the region based on image
-    boundaries instead of relying only on colour.
+    mask = _normalise_mask(banana_mask, image_bgr.shape[:2])
+    segmented = remove_background(image_bgr, mask)
+    return segmented, mask
+
+
+def segment_banana(
+    image_bgr: np.ndarray,
+    *,
+    kmeans_k: int | None = None,
+    banana_score_threshold: float | None = None,
+    opening_kernel_size: int | None = None,
+    closing_kernel_size: int | None = None,
+    config: ProcessingConfig | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create a banana mask with the shared K-means algorithm.
+
+    ``kmeans_k`` is configurable rather than fixed at 4.  If omitted, the
+    project's tuned ``ProcessingConfig`` default is used.  This helper is
+    useful for regenerating segmented training/validation/test images.  The
+    interactive Streamlit application instead passes its already-computed mask
+    to :func:`apply_banana_mask` so the mask is generated only once.
     """
+    if image_bgr is None or image_bgr.size == 0:
+        raise ValueError("Cannot segment an empty image.")
 
-    h, w = initial_mask.shape
+    cfg = config or ProcessingConfig()
 
-    grabcut_mask = np.full(
-        (h, w),
-        cv2.GC_BGD,
-        dtype=np.uint8
+    updates: dict[str, object] = {}
+    if kmeans_k is not None:
+        updates["kmeans_k"] = int(kmeans_k)
+    if banana_score_threshold is not None:
+        updates["banana_cluster_score_threshold"] = float(banana_score_threshold)
+    if updates:
+        cfg = replace(cfg, **updates)
+
+    opening = (
+        int(opening_kernel_size)
+        if opening_kernel_size is not None
+        else int(cfg.banana_opening_kernel)
+    )
+    closing = (
+        int(closing_kernel_size)
+        if closing_kernel_size is not None
+        else int(cfg.banana_closing_kernel)
     )
 
-    # Slightly expand the initial banana region.
-    kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (21, 21)
-    )
-
-    expanded = cv2.dilate(
-        initial_mask,
-        kernel,
-        iterations=2
-    )
-
-    # Expanded region = probably foreground
-    grabcut_mask[expanded > 0] = cv2.GC_PR_FGD
-
-    # Original K-means region = definite foreground
-    grabcut_mask[initial_mask > 0] = cv2.GC_FGD
-
-    bg_model = np.zeros((1, 65), np.float64)
-    fg_model = np.zeros((1, 65), np.float64)
-
-    cv2.grabCut(
-        image_bgr,
-        grabcut_mask,
-        None,
-        bg_model,
-        fg_model,
-        5,
-        cv2.GC_INIT_WITH_MASK
-    )
-
-    final_mask = np.where(
-        (grabcut_mask == cv2.GC_FGD) |
-        (grabcut_mask == cv2.GC_PR_FGD),
-        255,
-        0
-    ).astype(np.uint8)
-
-    return final_mask
-
-def segment_banana(image_bgr):
-
-    # 1. Light preprocessing
-    prepared = preprocess_image(image_bgr)
-
-    # 2. K-means gives an approximate banana region
-    label_image, _ = run_kmeans(
+    prepared = prepare_image(image_bgr, cfg)
+    banana_steps = banana_mask_from_prepared(
         prepared,
-        k=K
+        opening_kernel_size=opening,
+        closing_kernel_size=closing,
     )
 
-    banana_cluster = choose_banana_cluster(
-        prepared,
-        label_image,
-        K
+    mask = _resize_mask_to_original(
+        np.asarray(banana_steps["banana_mask"], dtype=np.uint8),
+        image_bgr.shape[:2],
     )
+    mask = _normalise_mask(mask, image_bgr.shape[:2])
+    segmented = remove_background(image_bgr, mask)
 
-    initial_mask = create_banana_mask(
-        label_image,
-        banana_cluster
-    )
+    return segmented, mask
 
-    # 3. Clean initial K-means mask
-    initial_mask = clean_mask(initial_mask)
 
-    initial_mask = keep_largest_object(
-        initial_mask
-    )
-
-    # 4. IMPORTANT:
-    # Refine using GrabCut so differently coloured
-    # peel regions can be recovered.
-    refined_mask = refine_mask_with_grabcut(
-        image_bgr,
-        initial_mask
-    )
-
-    # 5. Light cleanup only
-    refined_mask = clean_final_mask(
-        refined_mask
-    )
-
-    # 6. Remove background
-    segmented = remove_background(
-        image_bgr,
-        refined_mask
-    )
-
-    return segmented, refined_mask
-
-def clean_final_mask(mask):
-    kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (5, 5)
-    )
-
-    # Fill small gaps without aggressively removing peel.
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_CLOSE,
-        kernel,
-        iterations=2
-    )
-
-    return mask
-
-    # 5. Light cleanup only
-    refined_mask = clean_final_mask(
-        refined_mask
-    )
-
-    # 6. Remove background
-    segmented = remove_background(
-        image_bgr,
-        refined_mask
-    )
-
-    return segmented, refined_mask
+__all__ = [
+    "BACKGROUND_VALUE",
+    "apply_banana_mask",
+    "remove_background",
+    "segment_banana",
+]
