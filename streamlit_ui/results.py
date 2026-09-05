@@ -18,13 +18,7 @@ def render_results(
     blemish_opening: int,
     blemish_closing: int,
 ) -> None:
-    """Render the main assessment outputs and only the key processing stages.
-
-    The detailed development/debug views (Rule A, Rule B, distance maps,
-    morphology stages, and cluster tables) are intentionally not shown in
-    the normal application UI. They can still remain inside the processing
-    pipeline for report figures or debugging when needed.
-    """
+    """Render assessment outputs and the key two-stage K-means processing stages."""
     prepared = result["prepared"]
     blemish_steps = result["blemish_steps"]
     overlay = overlay_result(
@@ -33,11 +27,7 @@ def render_results(
         result["blemish_mask"],
     )
 
-    # ------------------------------------------------------------
-    # Main numerical results
-    # ------------------------------------------------------------
     st.subheader("Analysis results")
-
     m1, m2, m3, m4 = st.columns(4)
 
     if ripeness_result and bool(ripeness_result.get("available")):
@@ -63,11 +53,12 @@ def render_results(
         )
         st.warning(message)
 
-    # ------------------------------------------------------------
-    # Final outputs
-    # ------------------------------------------------------------
-    st.markdown("### Final output")
+    st.caption(
+        "Blemish detection uses second-stage Lab a,b K-means inside the shared "
+        "banana mask, followed by highlight exclusion and morphological refinement."
+    )
 
+    st.markdown("### Final output")
     c1, c2, c3, c4 = st.columns(4)
 
     c1.image(
@@ -91,19 +82,9 @@ def render_results(
         use_container_width=True,
     )
 
-    st.caption(
-        "The final banana mask defines the visible banana region used for "
-        "surface-quality analysis. The blemish percentage is calculated from "
-        "the final blemish mask relative to this visible banana region."
-    )
-
-    # ------------------------------------------------------------
-    # Optional ripeness details — collapsed by default
-    # ------------------------------------------------------------
     if ripeness_result and bool(ripeness_result.get("available")):
         with st.expander("Ripeness classification details", expanded=False):
             segmented_image = ripeness_result.get("segmented_image")
-
             if segmented_image is not None:
                 st.image(
                     cv2.cvtColor(segmented_image, cv2.COLOR_BGR2RGB),
@@ -112,10 +93,8 @@ def render_results(
                 )
 
             probabilities = dict(ripeness_result.get("probabilities", {}))
-
             if probabilities:
                 st.markdown("#### Class probabilities")
-
                 for class_name, probability in sorted(
                     probabilities.items(),
                     key=lambda item: float(item[1]),
@@ -123,28 +102,13 @@ def render_results(
                 ):
                     probability = max(0.0, min(1.0, float(probability)))
                     label_col, bar_col, value_col = st.columns([1.3, 4.0, 0.9])
-
                     label_col.write(str(class_name))
                     bar_col.progress(probability)
                     value_col.write(f"{probability * 100:.1f}%")
 
-    # ------------------------------------------------------------
-    # Simplified processing details
-    # ------------------------------------------------------------
     with st.expander("Processing details", expanded=False):
-        st.caption(
-            "Only the main stages are shown here. Detailed Rule A / Rule B, "
-            "cluster-distance, highlight-exclusion, and morphology debug views "
-            "are intentionally hidden from the normal user interface."
-        )
-
-        # ============================
-        # Banana segmentation
-        # ============================
         st.markdown("#### Banana segmentation")
-
         b1, b2, b3 = st.columns(3)
-
         b1.image(
             cv2.cvtColor(prepared["working_image"], cv2.COLOR_BGR2RGB),
             caption="1. Input / standardised image",
@@ -161,22 +125,11 @@ def render_results(
             use_container_width=True,
         )
 
-        st.caption(
-            "K-means first identifies banana-like colour regions. "
-            "Morphological refinement and connected-component processing then "
-            "produce the final shared banana mask."
-        )
-
-        # ============================
-        # Blemish detection
-        # ============================
         st.markdown("#### Blemish detection")
-
-        r1, r2, r3 = st.columns(3)
-
+        r1, r2, r3, r4 = st.columns(4)
         r1.image(
             blemish_steps["inner_banana"],
-            caption="1. Analysis area (banana mask)",
+            caption="1. Analysis area",
             use_container_width=True,
         )
         r2.image(
@@ -185,34 +138,18 @@ def render_results(
             use_container_width=True,
         )
         r3.image(
-            blemish_steps["raw_blemish_candidate"],
-            caption="3. Combined blemish candidate",
-            use_container_width=True,
-        )
-
-        r4, r5 = st.columns(2)
-
-        r4.image(
             result["blemish_mask"],
-            caption="4. Final blemish mask",
+            caption="3. Final blemish mask",
             use_container_width=True,
         )
-        r5.image(
+        r4.image(
             cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB),
-            caption="5. Detection overlay",
+            caption="4. Detection overlay",
             use_container_width=True,
         )
 
         st.caption(
-            "The K-means candidate is supplemented by the internal colour-based "
-            "rules, while detected bright highlights are excluded. These results "
-            "form the combined blemish candidate. Morphological refinement and "
-            "small-region filtering then produce the final blemish mask."
-        )
-
-        st.info(
-            "If a false positive or false negative needs to be investigated, "
-            "the detailed internal masks (healthy-cluster family, colour-distance "
-            "map, highlight exclusion, Rule A, Rule B, opening and closing) can "
-            "still be inspected during development or shown selectively in the report."
+            "The second-stage K-means candidate is filtered for obvious bright "
+            "highlights. Morphological opening/closing and small-region removal "
+            "then produce the final blemish mask."
         )

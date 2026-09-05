@@ -1,3 +1,0 @@
-0 Overripe
-1 Ripe
-2 Unripe

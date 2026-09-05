@@ -28,8 +28,8 @@ def blemish_mask_from_prepared(
     peel reference. Other clusters are classified by a,b chroma distance from
     that healthy family.
 
-    Supplemental Rule A/B are retained for subtle damaged pixels that may stay
-    inside a broad K-means cluster. The previous darkness-only Rule C is removed.
+    The final blemish detector uses the second-stage K-means candidate,
+    bright-highlight exclusion, morphology, and small-component filtering.
     """
     config = config or ProcessingConfig()
     blurred = np.asarray(prepared["blurred"], dtype=np.uint8)
@@ -48,8 +48,6 @@ def blemish_mask_from_prepared(
             "blemish_cluster_distance_map": zero,
             "kmeans_region_candidate": zero,
             "bright_highlight_mask": zero,
-            "rule_a_mask": zero,
-            "rule_b_mask": zero,
             "raw_blemish_candidate": zero,
             "blemish_opened": zero,
             "blemish_closed": zero,
@@ -57,6 +55,9 @@ def blemish_mask_from_prepared(
             "blemish_cluster_summary": [],
             "healthy_cluster_ids": [],
             "blemish_cluster_ids": [],
+            "lightness_map": np.zeros_like(banana, dtype=np.float32),
+            "saturation_map": np.zeros_like(banana, dtype=np.float32),
+            "value_map": np.zeros_like(banana, dtype=np.float32),
             "blemish_opening_kernel": opening_kernel,
             "blemish_closing_kernel": closing_kernel,
         }
@@ -73,7 +74,7 @@ def blemish_mask_from_prepared(
     hsv = cv2.cvtColor(filtered, cv2.COLOR_BGR2HSV).astype(np.float32)
 
     lightness, a_channel, b_channel = cv2.split(lab)
-    hue, saturation, value = cv2.split(hsv)
+    _, saturation, value = cv2.split(hsv)
     inside = inner > 0
 
     # ------------------------------------------------------------------
@@ -201,10 +202,6 @@ def blemish_mask_from_prepared(
 
     healthy = inside & np.isin(cluster_label_map, healthy_cluster_ids)
 
-    # Median reference of all pixels in the selected healthy cluster family.
-    healthy_colour = np.median(lab[healthy], axis=0)
-    healthy_hue = float(np.median(hue[healthy]))
-
     # ------------------------------------------------------------------
     # REGION CANDIDATE FROM SECOND K-MEANS
     # ------------------------------------------------------------------
@@ -221,41 +218,8 @@ def blemish_mask_from_prepared(
     )
     region_candidate &= ~bright_highlight
 
-    # ------------------------------------------------------------------
-    # SUPPLEMENTAL RULE A/B
-    # ------------------------------------------------------------------
-    darkness = np.maximum(healthy_colour[0] - lightness, 0.0)
-    redness = np.maximum(a_channel - healthy_colour[1], 0.0)
-    yellow_loss = np.maximum(healthy_colour[2] - b_channel, 0.0)
-
-    # Circular OpenCV hue difference (0..179). This detects change in either
-    # direction and handles wraparound at red.
-    hue_difference = np.abs(hue - healthy_hue)
-    hue_difference = np.minimum(hue_difference, 180.0 - hue_difference)
-
-    valid_colour = saturation >= float(config.blemish_min_saturation)
-
-    rule_a = inside & ~bright_highlight & (
-        valid_colour
-        & (hue_difference > float(config.hue_drop_threshold))
-        & (darkness > float(config.darkness_threshold))
-    )
-
-    rule_b = inside & ~bright_highlight & (
-        valid_colour
-        & (hue_difference > float(config.strong_hue_drop_threshold))
-        & (
-            (redness > float(config.redness_threshold))
-            | (yellow_loss > float(config.yellow_loss_threshold))
-        )
-    )
-
-    # IMPORTANT: the old pixel-by-pixel darkness-only Rule C is intentionally
-    # removed. Dark/black regions are now recovered by the a,b region K-means
-    # when their chroma differs from the healthy cluster family.
-    candidate = region_candidate | rule_a | rule_b
-
-    raw = np.where(candidate, 255, 0).astype(np.uint8)
+    # Convert the final second-stage K-means candidate into a binary mask.
+    raw = np.where(region_candidate, 255, 0).astype(np.uint8)
 
     # Morphology is cleanup only.
     opened = _morphology(raw, cv2.MORPH_OPEN, opening_kernel)
@@ -306,25 +270,15 @@ def blemish_mask_from_prepared(
         "healthy_cluster_ids": healthy_cluster_ids,
         "blemish_cluster_ids": blemish_cluster_ids,
 
-        # Supplemental rule diagnostics.
-        "rule_a_mask": np.where(rule_a, 255, 0).astype(np.uint8),
-        "rule_b_mask": np.where(rule_b, 255, 0).astype(np.uint8),
-
+        # Binary K-means candidate after bright-highlight exclusion.
         "raw_blemish_candidate": raw,
         "blemish_opened": opened,
         "blemish_closed": closed,
         "blemish_mask": final_mask,
 
-        # Numeric debug maps retained for inspection.
         "lightness_map": lightness,
         "saturation_map": saturation,
         "value_map": value,
-        "darkness_map": darkness,
-        "redness_map": redness,
-        "yellow_loss_map": yellow_loss,
-        "hue_difference_map": hue_difference,
-        # Backward-compatible alias used by older app/debug code.
-        "hue_drop_map": hue_difference,
 
         "blemish_opening_kernel": opening_kernel,
         "blemish_closing_kernel": closing_kernel,

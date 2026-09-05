@@ -19,9 +19,10 @@ from streamlit_ui.ripeness import classify_ripeness_for_ui
 
 st.title("Banana Quality and Ripeness Assessment")
 st.caption(
-    "K-means creates one shared banana mask using the current sidebar K value. "
-    "That same mask is used for blemish analysis and to prepare the banana "
-    "image for Teachable Machine ripeness classification."
+    "Automatic K-means is used to create the banana mask for surface-quality "
+    "analysis. Blemishes are detected using second-stage K-means inside that mask, while the same "
+    "uploaded or camera-captured image is also classified as Unripe, Ripe, "
+    "or Overripe by the Teachable Machine model."
 )
 
 settings = render_sidebar()
@@ -44,7 +45,6 @@ config = replace(
     banana_cluster_score_threshold=float(settings["banana_score_threshold"]),
     blemish_kmeans_k=int(settings["blemish_k"]),
     blemish_cluster_chroma_threshold=float(settings["blemish_chroma_threshold"]),
-    darkness_threshold=float(settings["darkness_threshold"]),
 )
 
 with st.spinner("Analysing banana..."):
@@ -58,11 +58,11 @@ with st.spinner("Analysing banana..."):
         config=config,
     )
 
-    # Reuse the exact final banana mask produced above.  The K slider therefore
-    # affects one shared mask that feeds BOTH blemish and ripeness analysis.
+    # Reuse the same final banana mask for both blemish analysis and ripeness
+    # classification so both branches operate on the same detected banana region.
     ripeness_result = classify_ripeness_for_ui(
         image,
-        banana_mask=result["banana_mask"],
+        result["banana_mask"],
     )
 
 render_results(
