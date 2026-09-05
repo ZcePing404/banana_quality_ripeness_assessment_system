@@ -1,22 +1,42 @@
-"""Result, diagnostic-stage, and detail panels for Streamlit."""
+"""Result and simplified processing-detail panels for Streamlit."""
 
 from __future__ import annotations
 
 import cv2
-import pandas as pd
 import streamlit as st
 
 from banana_quality.visualisation import overlay_result
 
 
-def render_results(image, result, *, ripeness_result: dict[str, object] | None = None,
-                   banana_opening: int, banana_closing: int,
-                   blemish_opening: int, blemish_closing: int) -> None:
-    """Render ripeness, surface-quality outputs, processing stages and details."""
+def render_results(
+    image,
+    result,
+    *,
+    ripeness_result: dict[str, object] | None = None,
+    banana_opening: int,
+    banana_closing: int,
+    blemish_opening: int,
+    blemish_closing: int,
+) -> None:
+    """Render the main assessment outputs and only the key processing stages.
+
+    The detailed development/debug views (Rule A, Rule B, distance maps,
+    morphology stages, and cluster tables) are intentionally not shown in
+    the normal application UI. They can still remain inside the processing
+    pipeline for report figures or debugging when needed.
+    """
     prepared = result["prepared"]
-    banana_steps = result["banana_steps"]
     blemish_steps = result["blemish_steps"]
-    overlay = overlay_result(image, result["banana_mask"], result["blemish_mask"])
+    overlay = overlay_result(
+        image,
+        result["banana_mask"],
+        result["blemish_mask"],
+    )
+
+    # ------------------------------------------------------------
+    # Main numerical results
+    # ------------------------------------------------------------
+    st.subheader("Analysis results")
 
     m1, m2, m3, m4 = st.columns(4)
 
@@ -29,18 +49,11 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
         m1.metric("Ripeness", "Unavailable")
         m2.metric("Ripeness confidence", "—")
 
-    m3.metric("Blemish area", f"{result['blemish_percentage']:.2f}%")
+    m3.metric(
+        "Visible blemish percentage",
+        f"{result['blemish_percentage']:.2f}%",
+    )
     m4.metric("Surface quality", result["quality_grade"])
-
-    st.caption(
-        f"Surface-quality segmentation: automatic K-means; "
-        f"selected clusters: {prepared['selected_clusters']}"
-    )
-
-    st.caption(
-        "The same final K-means banana mask is shared by blemish analysis "
-        "and ripeness classification. Changing K updates both branches."
-    )
 
     if not ripeness_result or not bool(ripeness_result.get("available")):
         message = (
@@ -50,136 +63,156 @@ def render_results(image, result, *, ripeness_result: dict[str, object] | None =
         )
         st.warning(message)
 
-    st.subheader("Final output")
+    # ------------------------------------------------------------
+    # Final outputs
+    # ------------------------------------------------------------
+    st.markdown("### Final output")
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), caption="Original", use_container_width=True)
-    c2.image(result["banana_mask"], caption="Banana mask", use_container_width=True)
-    c3.image(result["blemish_mask"], caption="Blemish mask", use_container_width=True)
-    c4.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption="Overlay", use_container_width=True)
 
+    c1.image(
+        cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+        caption="Input image",
+        use_container_width=True,
+    )
+    c2.image(
+        result["banana_mask"],
+        caption="Final banana mask",
+        use_container_width=True,
+    )
+    c3.image(
+        result["blemish_mask"],
+        caption="Final blemish mask",
+        use_container_width=True,
+    )
+    c4.image(
+        cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB),
+        caption="Detection overlay",
+        use_container_width=True,
+    )
+
+    st.caption(
+        "The final banana mask defines the visible banana region used for "
+        "surface-quality analysis. The blemish percentage is calculated from "
+        "the final blemish mask relative to this visible banana region."
+    )
+
+    # ------------------------------------------------------------
+    # Optional ripeness details — collapsed by default
+    # ------------------------------------------------------------
     if ripeness_result and bool(ripeness_result.get("available")):
-        with st.expander("Ripeness prediction details", expanded=True):
-            st.caption(
-                "The image below is the segmented image that is actually "
-                "sent to the ripeness classifier."
-            )
-
+        with st.expander("Ripeness classification details", expanded=False):
             segmented_image = ripeness_result.get("segmented_image")
-            ripeness_mask = ripeness_result.get("banana_mask")
 
             if segmented_image is not None:
-                r1, r2 = st.columns(2)
-                r1.image(
+                st.image(
                     cv2.cvtColor(segmented_image, cv2.COLOR_BGR2RGB),
-                    caption="Image sent to ripeness classifier",
+                    caption="Image sent to the ripeness classifier",
                     use_container_width=True,
                 )
-                if ripeness_mask is not None:
-                    r2.image(
-                        ripeness_mask,
-                        caption="Shared banana mask",
-                        use_container_width=True,
-                    )
 
-            st.markdown("#### Class probabilities")
             probabilities = dict(ripeness_result.get("probabilities", {}))
-            for class_name, probability in sorted(
-                probabilities.items(),
-                key=lambda item: float(item[1]),
-                reverse=True,
-            ):
-                probability = max(0.0, min(1.0, float(probability)))
-                label_col, bar_col, value_col = st.columns([1.2, 4.0, 0.9])
-                label_col.write(str(class_name))
-                bar_col.progress(probability)
-                value_col.write(f"{probability * 100:.1f}%")
 
-    with st.expander("Show processing stages", expanded=True):
-        r1 = st.columns(4)
-        r1[0].image(
+            if probabilities:
+                st.markdown("#### Class probabilities")
+
+                for class_name, probability in sorted(
+                    probabilities.items(),
+                    key=lambda item: float(item[1]),
+                    reverse=True,
+                ):
+                    probability = max(0.0, min(1.0, float(probability)))
+                    label_col, bar_col, value_col = st.columns([1.3, 4.0, 0.9])
+
+                    label_col.write(str(class_name))
+                    bar_col.progress(probability)
+                    value_col.write(f"{probability * 100:.1f}%")
+
+    # ------------------------------------------------------------
+    # Simplified processing details
+    # ------------------------------------------------------------
+    with st.expander("Processing details", expanded=False):
+        st.caption(
+            "Only the main stages are shown here. Detailed Rule A / Rule B, "
+            "cluster-distance, highlight-exclusion, and morphology debug views "
+            "are intentionally hidden from the normal user interface."
+        )
+
+        # ============================
+        # Banana segmentation
+        # ============================
+        st.markdown("#### Banana segmentation")
+
+        b1, b2, b3 = st.columns(3)
+
+        b1.image(
             cv2.cvtColor(prepared["working_image"], cv2.COLOR_BGR2RGB),
-            caption="1. Standardised image",
+            caption="1. Input / standardised image",
             use_container_width=True,
         )
-        r1[1].image(
-            cv2.cvtColor(prepared["blurred"], cv2.COLOR_BGR2RGB),
-            caption="2. Gaussian blur",
-            use_container_width=True,
-        )
-        r1[2].image(
-            cv2.cvtColor(prepared["kmeans_quantised_bgr"], cv2.COLOR_BGR2RGB),
-            caption=f"3. Whole-image K-means (K={result['kmeans_k']})",
-            use_container_width=True,
-        )
-        r1[3].image(
-            prepared["banana_colour_prior"],
-            caption="4. Banana-colour prior",
-            use_container_width=True,
-        )
-
-        r2 = st.columns(4)
-        r2[0].image(
-            prepared["banana_likelihood_map"],
-            caption="5. Cluster banana-likelihood",
-            use_container_width=True,
-        )
-        r2[1].image(
+        b2.image(
             prepared["raw_banana_candidate"],
-            caption="6. Raw K-means banana candidate",
+            caption="2. K-means banana candidate",
             use_container_width=True,
         )
-        r2[2].image(
-            banana_steps["banana_opened"],
-            caption=f"7. Opening ({banana_opening}x{banana_opening})",
+        b3.image(
+            result["banana_mask"],
+            caption="3. Final banana mask",
             use_container_width=True,
         )
-        r2[3].image(
-            banana_steps["banana_closed"],
-            caption=f"8. Closing ({banana_closing}x{banana_closing})",
-            use_container_width=True,
-        )
-
-        st.markdown("### Blemish processing: second-stage K-means inside banana")
-
-        rb1 = st.columns(4)
-        rb1[0].image(blemish_steps["inner_banana"], caption="1. Area allowed for blemish analysis", use_container_width=True)
-        rb1[1].image(blemish_steps["healthy_peel_candidates"], caption="2. Healthy colour-cluster family", use_container_width=True)
-        rb1[2].image(cv2.cvtColor(blemish_steps["blemish_kmeans_quantised_bgr"], cv2.COLOR_BGR2RGB), caption="3. Second K-means using Lab a,b", use_container_width=True)
-        rb1[3].image(blemish_steps["blemish_cluster_distance_map"], caption="4. a,b distance from healthy clusters", use_container_width=True)
-
-        rb2 = st.columns(4)
-        rb2[0].image(blemish_steps["kmeans_region_candidate"], caption="5. Region blemish candidate", use_container_width=True)
-        rb2[1].image(blemish_steps["bright_highlight_mask"], caption="6. Bright-highlight exclusion", use_container_width=True)
-        rb2[2].image(blemish_steps["rule_a_mask"], caption="7. Supplemental Rule A", use_container_width=True)
-        rb2[3].image(blemish_steps["rule_b_mask"], caption="8. Supplemental Rule B", use_container_width=True)
-
-        rb3 = st.columns(4)
-        rb3[0].image(blemish_steps["raw_blemish_candidate"], caption="9. Combined raw blemish candidate", use_container_width=True)
-        rb3[1].image(blemish_steps["blemish_opened"], caption=f"10. Opening ({blemish_opening}x{blemish_opening})", use_container_width=True)
-        rb3[2].image(blemish_steps["blemish_closed"], caption=f"11. Closing ({blemish_closing}x{blemish_closing})", use_container_width=True)
-        rb3[3].image(blemish_steps["blemish_mask"], caption="12. Final blemish mask", use_container_width=True)
 
         st.caption(
-            "The second blemish K-means clusters only Lab a,b. Lab L/brightness is not "
-            "used for this grouping, so a normal shadow is less likely to become its own "
-            "blemish region just because it is darker."
+            "K-means first identifies banana-like colour regions. "
+            "Morphological refinement and connected-component processing then "
+            "produce the final shared banana mask."
         )
 
-    with st.expander("K-means cluster details"):
-        df = pd.DataFrame(prepared["cluster_summary"])
-        st.dataframe(df, use_container_width=True)
-        st.caption("These clusters are used to build the automatic banana mask.")
+        # ============================
+        # Blemish detection
+        # ============================
+        st.markdown("#### Blemish detection")
 
-    with st.expander("Blemish second-stage K-means cluster details"):
-        blemish_df = pd.DataFrame(blemish_steps["blemish_cluster_summary"])
-        st.dataframe(blemish_df, use_container_width=True)
-        st.write(
-            {
-                "Healthy cluster IDs": blemish_steps["healthy_cluster_ids"],
-                "Blemish cluster IDs": blemish_steps["blemish_cluster_ids"],
-            }
+        r1, r2, r3 = st.columns(3)
+
+        r1.image(
+            blemish_steps["inner_banana"],
+            caption="1. Analysis area (banana mask)",
+            use_container_width=True,
         )
+        r2.image(
+            blemish_steps["kmeans_region_candidate"],
+            caption="2. K-means blemish candidate",
+            use_container_width=True,
+        )
+        r3.image(
+            blemish_steps["raw_blemish_candidate"],
+            caption="3. Combined blemish candidate",
+            use_container_width=True,
+        )
+
+        r4, r5 = st.columns(2)
+
+        r4.image(
+            result["blemish_mask"],
+            caption="4. Final blemish mask",
+            use_container_width=True,
+        )
+        r5.image(
+            cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB),
+            caption="5. Detection overlay",
+            use_container_width=True,
+        )
+
         st.caption(
-            "Formal IoU/Dice evaluation should use one fixed ProcessingConfig for all "
-            "test images. Do not tune these internal thresholds separately for each test image."
+            "The K-means candidate is supplemented by the internal colour-based "
+            "rules, while detected bright highlights are excluded. These results "
+            "form the combined blemish candidate. Morphological refinement and "
+            "small-region filtering then produce the final blemish mask."
+        )
+
+        st.info(
+            "If a false positive or false negative needs to be investigated, "
+            "the detailed internal masks (healthy-cluster family, colour-distance "
+            "map, highlight exclusion, Rule A, Rule B, opening and closing) can "
+            "still be inspected during development or shown selectively in the report."
         )

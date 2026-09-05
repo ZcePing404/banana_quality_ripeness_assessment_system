@@ -88,7 +88,7 @@ def render_sidebar() -> dict[str, object]:
         blemish_k = st.slider(
             "Blemish colour clusters (K)",
             3,
-            10,
+            20,
             int(definitions["blemish_kmeans_k"]),
             1,
             help=(
