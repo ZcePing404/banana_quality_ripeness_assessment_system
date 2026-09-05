@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f4e8">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍌</text></svg>">
+    <title>Banana Quality & Ripeness Assessment</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<div class="page-shell">
+
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">🍌</div>
+            <div>
+                <h1>Banana Quality and Ripeness Assessment</h1>
+                <p>Ripeness classification and surface-quality analysis using image processing.</p>
+            </div>
+        </div>
+        <div class="header-note">
+            <strong>Single banana</strong>
+            <span>recommended per image</span>
+        </div>
+    </header>
+
+    <main class="dashboard">
+
+        <!-- =========================================================
+             TOP WORKSPACE
+             ========================================================= -->
+        <section class="workspace-grid">
+
+            <!-- 1. IMAGE INPUT -->
+            <article class="workspace-card input-card">
+                <div class="card-heading">
+                    <span class="step-number">1</span>
+                    <div>
+                        <h2>Image Input</h2>
+                        <p>Upload an image or capture a camera frame.</p>
+                    </div>
+                </div>
+
+                <div class="source-tabs" role="tablist">
+                    <label class="source-option">
+                        <input type="radio" name="source" value="upload" checked>
+                        <span>Upload image</span>
+                    </label>
+                    <label class="source-option">
+                        <input type="radio" name="source" value="camera">
+                        <span>Use camera</span>
+                    </label>
+                </div>
+
+                <div id="upload-panel" class="source-panel">
+                    <label class="upload-box" for="image-file">
+                        <div class="upload-symbol">↑</div>
+                        <strong>Select banana image</strong>
+                        <span>JPG or PNG</span>
+                    </label>
+                    <input id="image-file" class="file-input" type="file" accept="image/jpeg,image/png">
+
+                    <div id="upload-meta" class="file-meta hidden">
+                        <div class="file-meta-copy">
+                            <strong id="upload-name">Selected image</strong>
+                            <span id="upload-size">—</span>
+                        </div>
+                        <button id="clear-upload" class="text-button" type="button">Clear</button>
+                    </div>
+
+                    <div class="preview-frame">
+                        <img id="upload-preview" class="input-preview hidden" alt="Upload preview">
+                        <div id="upload-placeholder" class="preview-placeholder">
+                            <span>Image preview</span>
+                            <small>Your selected banana image will appear here.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="camera-panel" class="source-panel hidden">
+                    <div class="camera-tip">
+                        Keep one banana near the centre with even lighting.
+                    </div>
+                    <video id="camera-video" autoplay playsinline></video>
+                    <canvas id="camera-canvas" class="hidden"></canvas>
+
+                    <div class="button-row">
+                        <button id="start-camera" class="secondary" type="button">Start camera</button>
+                        <button id="capture-camera" class="secondary" type="button" disabled>Capture frame</button>
+                        <button id="stop-camera" class="ghost" type="button" disabled>Stop</button>
+                    </div>
+
+                    <img id="camera-preview" class="input-preview hidden" alt="Captured frame">
+                </div>
+
+                <div id="crop-editor" class="crop-editor hidden">
+                    <div class="crop-heading">
+                        <div>
+                            <strong>Optional crop</strong>
+                            <span>Drag a box around the banana before analysis.</span>
+                        </div>
+                        <span id="crop-status" class="crop-status">Not cropped</span>
+                    </div>
+
+                    <div class="crop-canvas-wrap">
+                        <canvas id="crop-canvas"></canvas>
+                    </div>
+
+                    <div class="crop-actions">
+                        <p>
+                            Crop only to remove unnecessary surroundings. The normal
+                            K-means segmentation and background removal still run afterwards.
+                        </p>
+                        <div class="button-row crop-buttons">
+                            <button id="apply-crop" class="secondary" type="button">Crop image</button>
+                            <button id="reset-crop" class="ghost" type="button">Reset crop</button>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- 2. SETTINGS -->
+            <article class="workspace-card settings-card">
+                <div class="card-heading card-heading-split">
+                    <div class="heading-left">
+                        <span class="step-number">2</span>
+                        <div>
+                            <h2>Analysis Settings</h2>
+                            <p>Use the tuned defaults or adjust them before analysis.</p>
+                        </div>
+                    </div>
+                    <button id="reset-settings" class="reset-button" type="button">Reset defaults</button>
+                </div>
+
+                <div class="settings-group banana-group">
+                    <div class="settings-title">
+                        <strong>Banana segmentation</strong>
+                        <span>Automatic K-means</span>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="kmeans_k">K-means clusters (K)</label>
+                        <input id="kmeans_k" type="range" min="3" max="30" step="1"
+                               value="{{ defaults.kmeans_k }}" data-default="{{ defaults.kmeans_k }}">
+                        <output id="kmeans_k_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="banana_score_threshold">Cluster acceptance</label>
+                        <input id="banana_score_threshold" type="range" min="0.20" max="0.80" step="0.05"
+                               value="{{ defaults.banana_score_threshold }}" data-default="{{ defaults.banana_score_threshold }}">
+                        <output id="banana_score_threshold_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="banana_opening">Opening kernel</label>
+                        <input id="banana_opening" type="range" min="1" max="21" step="2"
+                               value="{{ defaults.banana_opening }}" data-default="{{ defaults.banana_opening }}">
+                        <output id="banana_opening_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="banana_closing">Closing kernel</label>
+                        <input id="banana_closing" type="range" min="1" max="21" step="2"
+                               value="{{ defaults.banana_closing }}" data-default="{{ defaults.banana_closing }}">
+                        <output id="banana_closing_value"></output>
+                    </div>
+                </div>
+
+                <div class="settings-group blemish-group">
+                    <div class="settings-title">
+                        <strong>Blemish detection</strong>
+                        <span>Second-stage Lab a,b K-means</span>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="blemish_k">Blemish clusters (K)</label>
+                        <input id="blemish_k" type="range" min="3" max="10" step="1"
+                               value="{{ defaults.blemish_k }}" data-default="{{ defaults.blemish_k }}">
+                        <output id="blemish_k_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="blemish_chroma_threshold">Colour sensitivity</label>
+                        <input id="blemish_chroma_threshold" type="range" min="8" max="35" step="1"
+                               value="{{ defaults.blemish_chroma_threshold }}" data-default="{{ defaults.blemish_chroma_threshold }}">
+                        <output id="blemish_chroma_threshold_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="blemish_opening">Opening kernel</label>
+                        <input id="blemish_opening" type="range" min="1" max="21" step="2"
+                               value="{{ defaults.blemish_opening }}" data-default="{{ defaults.blemish_opening }}">
+                        <output id="blemish_opening_value"></output>
+                    </div>
+
+                    <div class="setting-row">
+                        <label for="blemish_closing">Closing kernel</label>
+                        <input id="blemish_closing" type="range" min="1" max="21" step="2"
+                               value="{{ defaults.blemish_closing }}" data-default="{{ defaults.blemish_closing }}">
+                        <output id="blemish_closing_value"></output>
+                    </div>
+                </div>
+            </article>
+
+            <!-- 3. PROCESSING DETAILS -->
+            <article class="workspace-card processing-card">
+                <div class="card-heading card-heading-split">
+                    <div class="heading-left">
+                        <span class="step-number">3</span>
+                        <div>
+                            <h2>Processing Details</h2>
+                            <p>View the key intermediate stages after analysis.</p>
+                        </div>
+                    </div>
+
+                    <label class="detail-toggle">
+                        <input id="show-details-toggle" type="checkbox" checked>
+                        <span class="toggle-track"><span></span></span>
+                        <small>Show</small>
+                    </label>
+                </div>
+
+                <div id="top-processing-details">
+                    <div class="mini-process banana-mini">
+                        <div class="mini-process-title">
+                            <strong>Banana segmentation</strong>
+                        </div>
+                        <div id="top-banana-processing" class="mini-process-grid">
+                            <div class="empty-process">
+                                <span>1</span>
+                                <p>Input</p>
+                            </div>
+                            <div class="process-arrow">→</div>
+                            <div class="empty-process">
+                                <span>2</span>
+                                <p>K-means candidate</p>
+                            </div>
+                            <div class="process-arrow">→</div>
+                            <div class="empty-process">
+                                <span>3</span>
+                                <p>Final mask</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mini-process blemish-mini">
+                        <div class="mini-process-title">
+                            <strong>Blemish detection</strong>
+                        </div>
+                        <div id="top-blemish-processing" class="mini-process-grid five">
+                            <div class="empty-process"><span>1</span><p>Banana mask</p></div>
+                            <div class="process-arrow">→</div>
+                            <div class="empty-process"><span>2</span><p>K-means candidate</p></div>
+                            <div class="process-arrow">→</div>
+                            <div class="empty-process"><span>3</span><p>Combined candidate</p></div>
+                            <div class="process-arrow row-two-arrow">→</div>
+                            <div class="empty-process row-two"><span>4</span><p>Final mask</p></div>
+                            <div class="process-arrow row-two-arrow">→</div>
+                            <div class="empty-process row-two"><span>5</span><p>Overlay</p></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="processing-placeholder" class="processing-placeholder">
+                    Run an analysis to populate the processing stages.
+                </div>
+            </article>
+        </section>
+
+        <div class="analysis-action">
+            <div id="status" class="status"></div>
+            <button id="analyse-button" class="primary analyse-main" type="button">
+                Start analysis
+                <span>→</span>
+            </button>
+        </div>
+
+        <!-- =========================================================
+             RESULTS
+             ========================================================= -->
+        <section id="results-section" class="results-section hidden">
+            <div class="results-header">
+                <div>
+                    <span class="eyebrow">4. Analysis Results</span>
+                    <h2>Assessment summary</h2>
+                    <p>Ripeness, visible blemish percentage and surface-quality grade.</p>
+                </div>
+                <div id="processing-time" class="processing-time">Processed</div>
+            </div>
+
+            <div class="metrics-grid">
+                <article class="metric-card ripeness-card">
+                    <span>Ripeness</span>
+                    <strong id="metric-ripeness">—</strong>
+                </article>
+                <article class="metric-card confidence-card">
+                    <span>Confidence</span>
+                    <strong id="metric-confidence">—</strong>
+                </article>
+                <article class="metric-card blemish-card">
+                    <span>Visible blemish</span>
+                    <strong id="metric-blemish">—</strong>
+                </article>
+                <article class="metric-card quality-card">
+                    <span>Surface quality</span>
+                    <strong id="metric-quality">—</strong>
+                </article>
+            </div>
+
+            <div class="results-main-grid">
+                <section class="result-panel">
+                    <div class="section-bar">
+                        <strong>Final output images</strong>
+                    </div>
+                    <div id="final-images" class="image-grid four"></div>
+                </section>
+
+                <aside class="summary-panel">
+                    <div class="section-bar">
+                        <strong>Summary</strong>
+                    </div>
+                    <dl class="summary-list">
+                        <div><dt>Image</dt><dd id="summary-image-name">—</dd></div>
+                        <div><dt>Ripeness</dt><dd id="summary-ripeness">—</dd></div>
+                        <div><dt>Confidence</dt><dd id="summary-confidence">—</dd></div>
+                        <div><dt>Visible blemish</dt><dd id="summary-blemish">—</dd></div>
+                        <div><dt>Surface quality</dt><dd id="summary-quality">—</dd></div>
+                    </dl>
+                </aside>
+            </div>
+
+            <details class="details-panel" open>
+                <summary>
+                    <span>Ripeness prediction details</span>
+                    <b>+</b>
+                </summary>
+                <div class="details-body">
+                    <p class="muted">
+                        The background-removed image is the exact image sent to the segmented Teachable Machine classifier.
+                    </p>
+                    <div id="ripeness-images" class="image-grid two"></div>
+                    <h3>Class probabilities</h3>
+                    <div id="probability-list" class="probability-list"></div>
+                    <div id="ripeness-warning" class="warning hidden"></div>
+                </div>
+            </details>
+
+            <details class="details-panel">
+                <summary>
+                    <span>Full processing diagnostics</span>
+                    <b>+</b>
+                </summary>
+                <div class="details-body">
+                    <h3>Banana segmentation stages</h3>
+                    <div id="banana-processing" class="image-grid four"></div>
+
+                    <h3 class="diagnostic-heading">Blemish processing stages</h3>
+                    <div id="blemish-processing" class="image-grid four"></div>
+                </div>
+            </details>
+
+            <details class="details-panel">
+                <summary>
+                    <span>K-means cluster details</span>
+                    <b>+</b>
+                </summary>
+                <div class="details-body table-wrap">
+                    <div id="cluster-table"></div>
+                </div>
+            </details>
+
+            <details class="details-panel">
+                <summary>
+                    <span>Blemish cluster details</span>
+                    <b>+</b>
+                </summary>
+                <div class="details-body table-wrap">
+                    <div id="blemish-cluster-table"></div>
+                    <pre id="blemish-cluster-ids"></pre>
+                </div>
+            </details>
+        </section>
+    </main>
+
+    <footer class="footer">
+        Banana Quality and Ripeness Assessment System
+        <span>Computer Vision Project</span>
+    </footer>
+</div>
+
+<div id="image-modal" class="image-modal hidden" aria-hidden="true">
+    <button id="image-modal-close" class="image-modal-close" type="button" aria-label="Close image">×</button>
+    <div class="image-modal-content">
+        <img id="image-modal-img" alt="">
+        <p id="image-modal-caption"></p>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
