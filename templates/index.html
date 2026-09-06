@@ -23,14 +23,14 @@
                     <span class="step-number">1</span>
                     <div>
                         <h2>Image Input</h2>
-                        <p>Upload an image or capture a camera frame. Analysis starts automatically.</p>
+                        <p>Upload one image, multiple images, a folder, or capture a camera frame. Analysis starts automatically.</p>
                     </div>
                 </div>
 
                 <div class="source-tabs" role="tablist" aria-label="Image source">
                     <label class="source-option">
                         <input type="radio" name="source" value="upload" checked>
-                        <span>Upload image</span>
+                        <span>Upload image(s)</span>
                     </label>
                     <label class="source-option">
                         <input type="radio" name="source" value="camera">
@@ -46,10 +46,19 @@
                                 <path d="M5 14.5V19h14v-4.5"/>
                             </svg>
                         </span>
-                        <strong>Select banana image</strong>
-                        <span>JPG, PNG, WEBP, JPEG</span>
+                        <strong>Select banana image(s)</strong>
+                        <span>Choose one or multiple JPG, PNG, WEBP or JPEG images</span>
                     </label>
-                    <input id="image-file" class="file-input" type="file" accept=".jpg, .jpeg, .png, .webp, image/jpeg, image/png, image/webp">
+                    <input id="image-file" class="file-input" type="file" multiple accept=".jpg, .jpeg, .png, .webp, image/jpeg, image/png, image/webp">
+
+                    <div class="batch-picker-row">
+                        <span>or</span>
+                        <label class="folder-picker ghost" for="folder-input">
+                            Select an image folder
+                        </label>
+                        <input id="folder-input" class="file-input" type="file" webkitdirectory directory multiple accept="image/*">
+                    </div>
+                    <p class="batch-upload-note">Multiple-image and folder selections are processed one image at a time. Crop is available when one image is selected.</p>
 
                     <div id="upload-meta" class="file-meta hidden">
                         <div class="file-meta-copy">
@@ -319,6 +328,46 @@
 
                 <div id="processing-placeholder" class="processing-placeholder">Upload or capture an image to begin analysis.</div>
             </article>
+
+            <section id="batch-results-section" class="results-section batch-results-section hidden">
+                <div class="results-header batch-results-header">
+                    <div>
+                        <span class="eyebrow">3. Batch Analysis</span>
+                        <h2>Batch Assessment</h2>
+                        <p id="batch-summary-text">Selected images will be processed one at a time.</p>
+                    </div>
+                    <button id="batch-reanalyse" class="ghost" type="button">Re-analyse batch</button>
+                </div>
+
+                <div class="batch-progress-wrap">
+                    <div class="batch-progress-copy">
+                        <strong id="batch-progress-text">Preparing batch…</strong>
+                        <span id="batch-progress-percent">0%</span>
+                    </div>
+                    <div class="batch-progress"><div id="batch-progress-fill" class="batch-progress-fill"></div></div>
+                </div>
+
+                <div id="batch-settings-warning" class="batch-settings-warning hidden">
+                    Analysis settings changed. Select <strong>Re-analyse batch</strong> to refresh all results.
+                </div>
+
+                <div class="batch-table-wrap">
+                    <table class="batch-results-table">
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Ripeness</th>
+                                <th>Confidence</th>
+                                <th>Blemish</th>
+                                <th>Surface quality</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-results-body"></tbody>
+                    </table>
+                </div>
+            </section>
 
             <section id="results-section" class="results-section hidden">
             <div class="results-header">

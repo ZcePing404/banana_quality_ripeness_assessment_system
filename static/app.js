@@ -19,6 +19,15 @@ let pendingIncludeRipeness = false;
 let analysisTimer = null;
 let analysisEpoch = 0;
 
+// Batch-upload state.  Flask still processes one image per request; the
+// browser sends selected files sequentially so a large folder does not need
+// to be uploaded as one huge request.
+let batchFiles = [];
+let batchResults = [];
+let batchMode = false;
+let batchRunToken = 0;
+let batchNeedsRefresh = false;
+
 const settingIds = [
     "kmeans_k",
     "banana_score_threshold",
@@ -205,7 +214,12 @@ for (const input of ripenessMethodInputs) {
         // Invalidate an older in-flight response from the previous model.
         analysisEpoch += 1;
         updateRipenessMethodUI();
-        queueAnalysis(true, true);
+
+        if (batchMode) {
+            markBatchSettingsDirty();
+        } else {
+            queueAnalysis(true, true);
+        }
     });
 }
 
@@ -333,9 +347,19 @@ document.getElementById("reset-settings").addEventListener("click", () => {
 const uploadPanel = document.getElementById("upload-panel");
 const cameraPanel = document.getElementById("camera-panel");
 const imageFile = document.getElementById("image-file");
+const folderInput = document.getElementById("folder-input");
 const uploadMeta = document.getElementById("upload-meta");
 const uploadName = document.getElementById("upload-name");
 const uploadSize = document.getElementById("upload-size");
+
+const batchResultsSection = document.getElementById("batch-results-section");
+const batchResultsBody = document.getElementById("batch-results-body");
+const batchSummaryText = document.getElementById("batch-summary-text");
+const batchProgressText = document.getElementById("batch-progress-text");
+const batchProgressPercent = document.getElementById("batch-progress-percent");
+const batchProgressFill = document.getElementById("batch-progress-fill");
+const batchReanalyseButton = document.getElementById("batch-reanalyse");
+const batchSettingsWarning = document.getElementById("batch-settings-warning");
 
 for (const radio of document.querySelectorAll('input[name="source"]')) {
     radio.addEventListener("change", () => {
@@ -344,6 +368,10 @@ for (const radio of document.querySelectorAll('input[name="source"]')) {
         cameraPanel.classList.toggle("hidden", !useCamera);
 
         if (useCamera) {
+            batchRunToken += 1;
+            batchMode = false;
+            batchResultsSection?.classList.add("hidden");
+            setBatchControlsDisabled(false);
             updateCameraAvailability();
         } else {
             stopCameraStream();
@@ -358,11 +386,61 @@ function prettyBytes(bytes) {
 }
 
 imageFile.addEventListener("change", async () => {
-    const file = imageFile.files[0];
-    if (!file) {
+    const files = validImageFiles(Array.from(imageFile.files || []));
+
+    if (folderInput) folderInput.value = "";
+
+    if (files.length === 0) {
         clearUpload();
         return;
     }
+
+    if (files.length === 1) {
+        await activateSingleUpload(files[0]);
+        return;
+    }
+
+    await activateBatchUpload(files, { sourceLabel: "images" });
+});
+
+if (folderInput) {
+    folderInput.addEventListener("change", async () => {
+        const files = validImageFiles(Array.from(folderInput.files || []));
+        imageFile.value = "";
+
+        if (files.length === 0) {
+            clearUpload();
+            return;
+        }
+
+        await activateBatchUpload(files, { sourceLabel: "folder" });
+    });
+}
+
+function validImageFiles(files) {
+    const allowedExtensions = /\.(jpe?g|png|webp)$/i;
+    return files.filter((file) => (
+        allowedExtensions.test(file.name)
+        && (!file.type || file.type.startsWith("image/"))
+    ));
+}
+
+function displayFileName(file) {
+    return file.webkitRelativePath || file.name;
+}
+
+function totalFileBytes(files) {
+    return files.reduce((total, file) => total + Number(file.size || 0), 0);
+}
+
+async function activateSingleUpload(file) {
+    batchRunToken += 1;
+    batchMode = false;
+    batchFiles = [];
+    batchResults = [];
+    batchNeedsRefresh = false;
+    batchResultsSection?.classList.add("hidden");
+    batchSettingsWarning?.classList.add("hidden");
 
     analysisEpoch += 1;
     stopCameraStream();
@@ -378,12 +456,55 @@ imageFile.addEventListener("change", async () => {
 
     await initialiseCropEditor(file);
     queueAnalysis(true, true);
-});
+}
+
+async function activateBatchUpload(files, { sourceLabel = "images" } = {}) {
+    analysisEpoch += 1;
+    batchRunToken += 1;
+    stopCameraStream();
+    if (mobileCameraInput) mobileCameraInput.value = "";
+
+    batchMode = true;
+    batchFiles = files.slice();
+    batchResults = [];
+    batchNeedsRefresh = false;
+
+    originalImageBlob = null;
+    activeImageBlob = null;
+    capturedBlob = null;
+    resetCropEditorState();
+    resetAnalysisUI();
+    hideMobilePreview({ clearContent: true });
+
+    uploadMeta.classList.remove("hidden");
+    uploadName.textContent = sourceLabel === "folder"
+        ? `${files.length} images selected from folder`
+        : `${files.length} images selected`;
+    uploadSize.textContent = `${prettyBytes(totalFileBytes(files))} total`;
+
+    batchResultsSection?.classList.remove("hidden");
+    document.getElementById("processing-placeholder")?.classList.add("hidden");
+    batchSettingsWarning?.classList.add("hidden");
+
+    await startBatchAnalysis();
+}
+
 
 function clearUpload() {
     analysisEpoch += 1;
+    batchRunToken += 1;
+    batchMode = false;
+    batchFiles = [];
+    batchResults = [];
+    batchNeedsRefresh = false;
+
     imageFile.value = "";
+    if (folderInput) folderInput.value = "";
     uploadMeta.classList.add("hidden");
+    batchResultsSection?.classList.add("hidden");
+    batchSettingsWarning?.classList.add("hidden");
+    setBatchControlsDisabled(false);
+
     currentFileName = "banana.jpg";
     originalImageBlob = null;
     activeImageBlob = null;
@@ -395,6 +516,7 @@ function clearUpload() {
     resetAnalysisUI();
     setStatus("", "info");
 }
+
 
 document.getElementById("clear-upload").addEventListener("click", clearUpload);
 
@@ -555,7 +677,11 @@ captureCamera.addEventListener("click", () => {
         // prevents a previously selected file from being analysed by mistake
         // after the user switches tabs.
         imageFile.value = "";
+        if (folderInput) folderInput.value = "";
         uploadMeta.classList.add("hidden");
+        batchMode = false;
+        batchRunToken += 1;
+        batchResultsSection?.classList.add("hidden");
         mobileCameraInput.value = "";
 
         capturedBlob = blob;
@@ -576,7 +702,11 @@ mobileCameraInput.addEventListener("change", async () => {
 
     // Clear any old upload because the current source is now the camera tab.
     imageFile.value = "";
+    if (folderInput) folderInput.value = "";
     uploadMeta.classList.add("hidden");
+    batchMode = false;
+    batchRunToken += 1;
+    batchResultsSection?.classList.add("hidden");
 
     capturedBlob = file;
     originalImageBlob = file;
@@ -1010,11 +1140,17 @@ document.getElementById("show-details-toggle").addEventListener("change", (event
 // ---------------------------------------------------------------------
 
 function hasActiveImage() {
+    if (batchMode) return false;
     if (selectedSource() === "upload") return Boolean(imageFile.files[0] && activeImageBlob);
     return Boolean(capturedBlob && activeImageBlob);
 }
 
 function queueAnalysis(includeRipeness = true, immediate = false) {
+    if (batchMode) {
+        markBatchSettingsDirty();
+        return;
+    }
+
     if (!hasActiveImage()) return;
 
     setMobilePreviewUpdating(true);
@@ -1078,20 +1214,257 @@ async function requestAnalysis(includeRipeness) {
         currentFileName = filename;
     }
 
+    return requestAnalysisForBlob(blob, filename, {
+        includeRipeness,
+        compactResponse: false,
+    });
+}
+
+async function requestAnalysisForBlob(
+    blob,
+    filename,
+    { includeRipeness = true, compactResponse = false } = {}
+) {
     const form = new FormData();
     form.append("image", blob, filename);
     form.append("include_ripeness", includeRipeness ? "1" : "0");
     form.append("ripeness_method", selectedRipenessMethod());
+    form.append("compact_response", compactResponse ? "1" : "0");
 
     for (const id of settingIds) {
         form.append(id, document.getElementById(id).value);
     }
 
-    const response = await fetch("/api/analyse", { method: "POST", body: form });
+    const response = await fetch("/api/analyse", {
+        method: "POST",
+        body: form,
+    });
+
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "Analysis failed.");
+    if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Analysis failed.");
+    }
+
     return data;
 }
+
+function markBatchSettingsDirty() {
+    if (!batchMode || batchFiles.length === 0) return;
+    batchNeedsRefresh = true;
+    batchSettingsWarning?.classList.remove("hidden");
+}
+
+function setBatchProgress(processed, total, label = "") {
+    const safeTotal = Math.max(1, total);
+    const percent = Math.round(processed / safeTotal * 100);
+
+    if (batchProgressText) {
+        batchProgressText.textContent = label || `Processed ${processed} of ${total}`;
+    }
+    if (batchProgressPercent) batchProgressPercent.textContent = `${percent}%`;
+    if (batchProgressFill) batchProgressFill.style.width = `${percent}%`;
+}
+
+function setBatchControlsDisabled(disabled) {
+    if (batchReanalyseButton) batchReanalyseButton.disabled = disabled;
+    imageFile.disabled = disabled;
+    if (folderInput) folderInput.disabled = disabled;
+}
+
+async function startBatchAnalysis() {
+    if (!batchMode || batchFiles.length === 0) return;
+
+    const runToken = ++batchRunToken;
+    batchResults = new Array(batchFiles.length).fill(null);
+    batchNeedsRefresh = false;
+    batchSettingsWarning?.classList.add("hidden");
+    batchResultsSection?.classList.remove("hidden");
+    document.getElementById("results-section")?.classList.add("hidden");
+    hideMobilePreview({ clearContent: true });
+
+    if (batchResultsBody) batchResultsBody.innerHTML = "";
+    if (batchSummaryText) {
+        batchSummaryText.textContent = `${batchFiles.length} images queued using the ${selectedRipenessMethod()} ripeness model.`;
+    }
+
+    setBatchControlsDisabled(true);
+    setBatchProgress(0, batchFiles.length, `Preparing ${batchFiles.length} images…`);
+    setStatus(`Batch analysis started: 0 of ${batchFiles.length}`, "loading");
+
+    let successful = 0;
+    let failed = 0;
+
+    for (let index = 0; index < batchFiles.length; index++) {
+        if (runToken !== batchRunToken || !batchMode) return;
+
+        const file = batchFiles[index];
+        const name = displayFileName(file);
+        setBatchProgress(index, batchFiles.length, `Analysing ${index + 1} of ${batchFiles.length}: ${name}`);
+        setStatus(`Analysing ${index + 1} of ${batchFiles.length}: ${name}`, "loading");
+
+        const startedAt = performance.now();
+
+        try {
+            const data = await requestAnalysisForBlob(file, file.name, {
+                includeRipeness: true,
+                compactResponse: true,
+            });
+
+            if (runToken !== batchRunToken || !batchMode) return;
+
+            batchResults[index] = {
+                file,
+                displayName: name,
+                ok: true,
+                data,
+                elapsedSeconds: (performance.now() - startedAt) / 1000,
+            };
+            successful += 1;
+        } catch (error) {
+            batchResults[index] = {
+                file,
+                displayName: name,
+                ok: false,
+                error: error.message,
+                elapsedSeconds: (performance.now() - startedAt) / 1000,
+            };
+            failed += 1;
+        }
+
+        renderBatchResults();
+        setBatchProgress(index + 1, batchFiles.length);
+    }
+
+    if (runToken !== batchRunToken || !batchMode) return;
+
+    setBatchControlsDisabled(false);
+    setBatchProgress(batchFiles.length, batchFiles.length, `Completed ${batchFiles.length} images`);
+
+    if (batchSummaryText) {
+        batchSummaryText.textContent = `${successful} completed successfully${failed ? `, ${failed} failed` : ""}. Click View details for the full processing pipeline of an image.`;
+    }
+
+    setStatus(
+        failed
+            ? `Batch completed with ${failed} failed image${failed === 1 ? "" : "s"}.`
+            : `Batch analysis completed for ${successful} images.`,
+        failed ? "error" : "success"
+    );
+}
+
+function renderBatchResults() {
+    if (!batchResultsBody) return;
+    batchResultsBody.innerHTML = "";
+
+    batchResults.forEach((result, index) => {
+        if (!result) return;
+
+        const row = document.createElement("tr");
+
+        const imageCell = document.createElement("td");
+        imageCell.className = "batch-image-cell";
+        const thumb = document.createElement("img");
+        thumb.className = "batch-thumbnail";
+        thumb.alt = "";
+        if (result.ok && result.data?.images?.overlay) {
+            thumb.src = result.data.images.overlay;
+        }
+        const name = document.createElement("span");
+        name.textContent = result.displayName;
+        name.title = result.displayName;
+        imageCell.append(thumb, name);
+
+        if (!result.ok) {
+            appendBatchCell(row, imageCell);
+            appendBatchCell(row, "—");
+            appendBatchCell(row, "—");
+            appendBatchCell(row, "—");
+            appendBatchCell(row, "—");
+            appendBatchCell(row, "Failed", "batch-status-failed");
+
+            const errorCell = document.createElement("td");
+            const errorButton = document.createElement("button");
+            errorButton.type = "button";
+            errorButton.className = "ghost batch-view-button";
+            errorButton.textContent = "Error";
+            errorButton.title = result.error || "Analysis failed";
+            errorCell.appendChild(errorButton);
+            row.appendChild(errorCell);
+            batchResultsBody.appendChild(row);
+            return;
+        }
+
+        const metrics = result.data.metrics || {};
+        const confidence = metrics.ripeness_confidence == null
+            ? "—"
+            : `${(Number(metrics.ripeness_confidence) * 100).toFixed(1)}%`;
+        const blemish = Number.isFinite(Number(metrics.blemish_percentage))
+            ? `${Number(metrics.blemish_percentage).toFixed(2)}%`
+            : "—";
+
+        appendBatchCell(row, imageCell);
+        appendBatchCell(row, metrics.ripeness || "—");
+        appendBatchCell(row, confidence);
+        appendBatchCell(row, blemish);
+        appendBatchCell(row, metrics.surface_quality || "—");
+        appendBatchCell(row, "Complete", "batch-status-success");
+
+        const actionCell = document.createElement("td");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ghost batch-view-button";
+        button.textContent = "View details";
+        button.addEventListener("click", () => void openBatchDetail(index));
+        actionCell.appendChild(button);
+        row.appendChild(actionCell);
+
+        batchResultsBody.appendChild(row);
+    });
+}
+
+function appendBatchCell(row, content, className = "") {
+    if (content instanceof HTMLElement) {
+        if (className) content.classList.add(className);
+        row.appendChild(content);
+        return;
+    }
+
+    const cell = document.createElement("td");
+    cell.textContent = String(content);
+    if (className) cell.classList.add(className);
+    row.appendChild(cell);
+}
+
+async function openBatchDetail(index) {
+    const result = batchResults[index];
+    if (!result?.file) return;
+
+    const startedAt = performance.now();
+    setStatus(`Loading detailed analysis for ${result.displayName}…`, "loading");
+
+    try {
+        const data = await requestAnalysisForBlob(result.file, result.file.name, {
+            includeRipeness: true,
+            compactResponse: false,
+        });
+        const elapsedSeconds = (performance.now() - startedAt) / 1000;
+        renderResults(data, elapsedSeconds);
+        document.getElementById("results-section")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+        });
+        setStatus(`Detailed result loaded for ${result.displayName}.`, "success");
+    } catch (error) {
+        setStatus(error.message, "error");
+    }
+}
+
+if (batchReanalyseButton) {
+    batchReanalyseButton.addEventListener("click", () => {
+        if (batchMode && batchFiles.length) void startBatchAnalysis();
+    });
+}
+
 
 function renderResults(data, elapsedSeconds) {
     const metrics = data.metrics;

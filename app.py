@@ -93,6 +93,18 @@ def _as_bool(form, name: str, default: bool = True) -> bool:
     return value not in {"0", "false", "no", "off"}
 
 
+def _ripeness_method(form) -> str:
+    """Return the selected ripeness-classification pipeline."""
+    method = str(form.get("ripeness_method", "baseline")).strip().lower()
+
+    if method not in {"baseline", "segmented"}:
+        raise ValueError(
+            "Ripeness method must be either 'baseline' or 'segmented'."
+        )
+
+    return method
+
+
 def _defaults() -> dict[str, int | float]:
     config = ProcessingConfig()
     return {
@@ -180,6 +192,8 @@ def analyse():
 
         image = _decode_uploaded_image(image_file.read())
         include_ripeness = _as_bool(request.form, "include_ripeness", True)
+        ripeness_method = _ripeness_method(request.form)
+        compact_response = _as_bool(request.form, "compact_response", False)
 
         defaults = _defaults()
         settings = {
@@ -234,19 +248,39 @@ def analyse():
             result["blemish_mask"],
         )
 
+        # Batch uploads request a compact response so dozens of results do not
+        # keep several base64 diagnostic images in browser memory.  The same
+        # /api/analyse endpoint still processes exactly one image per request.
         images = {
-            "banana_mask": _encode_image_data_url(result["banana_mask"], png=True),
-            "blemish_mask": _encode_image_data_url(result["blemish_mask"], png=True),
             "overlay": _encode_image_data_url(overlay),
         }
+        if not compact_response:
+            images.update({
+                "banana_mask": _encode_image_data_url(result["banana_mask"], png=True),
+                "blemish_mask": _encode_image_data_url(result["blemish_mask"], png=True),
+            })
 
         ripeness_payload: dict[str, object]
         ripeness_name: str | None = None
         ripeness_confidence: float | None = None
 
         if include_ripeness:
-            # Reuse the exact final banana mask for the segmented classifier.
-            ripeness_result = classify_ripeness(image, result["banana_mask"])
+            # The two classifiers intentionally receive different inputs:
+            #
+            # baseline  -> original/cropped BGR image directly
+            # segmented -> same image after the final shared banana mask is
+            #              applied and the outside background is replaced
+            #              with white.
+            #
+            # Note: analyse_image() still runs because the application's
+            # surface-quality/blemish modules require the banana mask even
+            # when the BASELINE ripeness classifier is selected.
+            ripeness_result = classify_ripeness(
+                image,
+                banana_mask=result["banana_mask"],
+                method=ripeness_method,
+            )
+
             ripeness_name = (
                 str(ripeness_result.get("class_name", "Unknown"))
                 if ripeness_result.get("available")
@@ -258,27 +292,50 @@ def analyse():
                 else None
             )
 
-            segmented = ripeness_result.get("segmented_image")
-            if segmented is not None:
-                images["ripeness_segmented"] = _encode_image_data_url(segmented)
+            classifier_input = ripeness_result.get("classifier_input")
+            if classifier_input is not None and not compact_response:
+                images["ripeness_input"] = _encode_image_data_url(classifier_input)
 
             ripeness_payload = {
                 "skipped": False,
                 "available": bool(ripeness_result.get("available")),
                 "error": ripeness_result.get("error"),
+                "method": str(ripeness_result.get("method", ripeness_method)),
+                "method_label": str(
+                    ripeness_result.get(
+                        "method_label",
+                        "Baseline model"
+                        if ripeness_method == "baseline"
+                        else "Segmented model",
+                    )
+                ),
+                "input_caption": str(
+                    ripeness_result.get(
+                        "input_caption",
+                        "Original / cropped classifier input"
+                        if ripeness_method == "baseline"
+                        else "Background-removed classifier input",
+                    )
+                ),
                 "probabilities": {
                     str(name): float(value)
                     for name, value in ripeness_result.get("probabilities", {}).items()
                 },
             }
         else:
-            # Blemish-only setting changes do not alter the shared banana mask,
-            # so the browser keeps the previous ripeness result and avoids an
-            # unnecessary neural-network inference on every slider movement.
+            # Keep the previous prediction in the browser when only settings
+            # unrelated to the selected ripeness classifier have changed.
             ripeness_payload = {
                 "skipped": True,
                 "available": None,
                 "error": None,
+                "method": ripeness_method,
+                "method_label": (
+                    "Baseline model"
+                    if ripeness_method == "baseline"
+                    else "Segmented model"
+                ),
+                "input_caption": None,
                 "probabilities": {},
             }
 
@@ -292,7 +349,13 @@ def analyse():
             },
             "ripeness": ripeness_payload,
             "images": images,
-            "processing": _compact_processing_images(result, overlay),
+            "processing": (
+                {"banana": [], "blemish": []}
+                if compact_response
+                else _compact_processing_images(result, overlay)
+            ),
+            "filename": image_file.filename or "image",
+            "compact": compact_response,
         }
 
         return jsonify(payload)
@@ -302,8 +365,6 @@ def analyse():
 
 
 if __name__ == "__main__":
-    # Bind to all local network interfaces so another device on the same
-    # Wi-Fi (for example a phone) can open http://<laptop-ip>:5000.
     app.run(
         host="0.0.0.0",
         port=5000,
