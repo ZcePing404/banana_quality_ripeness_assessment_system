@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import base64
 
 import cv2
 import numpy as np
@@ -35,10 +36,8 @@ def _decode_uploaded_image(raw_bytes: bytes) -> np.ndarray:
 
     array = np.frombuffer(raw_bytes, dtype=np.uint8)
     image = cv2.imdecode(array, cv2.IMREAD_COLOR)
-
     if image is None or image.size == 0:
         raise ValueError("The uploaded/captured file could not be decoded as an image.")
-
     return image
 
 
@@ -47,7 +46,6 @@ def _to_uint8(image: np.ndarray) -> np.ndarray:
 
     if array.dtype == np.uint8:
         return array
-
     if array.dtype == bool:
         return array.astype(np.uint8) * 255
 
@@ -58,7 +56,6 @@ def _to_uint8(image: np.ndarray) -> np.ndarray:
 
         minimum = float(finite.min())
         maximum = float(finite.max())
-
         if 0.0 <= minimum and maximum <= 1.0:
             array = array * 255.0
         elif maximum > minimum:
@@ -70,11 +67,9 @@ def _to_uint8(image: np.ndarray) -> np.ndarray:
 
 
 def _encode_image_data_url(image: np.ndarray, *, png: bool = False) -> str:
-    import base64
-
     array = _to_uint8(image)
     extension = ".png" if png else ".jpg"
-    params = [] if png else [cv2.IMWRITE_JPEG_QUALITY, 92]
+    params = [] if png else [cv2.IMWRITE_JPEG_QUALITY, 90]
 
     ok, encoded = cv2.imencode(extension, array, params)
     if not ok:
@@ -93,24 +88,12 @@ def _as_int(form, name: str, default: int) -> int:
     return int(float(form.get(name, default)))
 
 
-def _json_safe(value):
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, np.floating):
-        return float(value)
-    if isinstance(value, np.bool_):
-        return bool(value)
-    return value
+def _as_bool(form, name: str, default: bool = True) -> bool:
+    value = str(form.get(name, "1" if default else "0")).strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def _defaults() -> dict[str, int | float]:
-    """Match the current Streamlit controls exactly."""
     config = ProcessingConfig()
     return {
         "kmeans_k": int(config.kmeans_k),
@@ -124,117 +107,51 @@ def _defaults() -> dict[str, int | float]:
     }
 
 
-def _processing_images(result: dict[str, object]) -> dict[str, object]:
-    """Build diagnostic stages from the CURRENT processing pipeline."""
+def _compact_processing_images(
+    result: dict[str, object],
+    overlay: np.ndarray,
+) -> dict[str, list[dict[str, str]]]:
+    """Return only the stages shown in the redesigned UI.
+
+    Keeping the response compact matters for live slider updates: the browser no
+    longer receives the old full diagnostics, cluster tables or unused stages.
+    """
     prepared = result["prepared"]
-    banana_steps = result["banana_steps"]
     blemish_steps = result["blemish_steps"]
 
     return {
         "banana": [
             {
-                "caption": "1. Standardised image",
+                "caption": "1. Input",
                 "src": _encode_image_data_url(prepared["working_image"]),
             },
             {
-                "caption": "2. Gaussian blur",
-                "src": _encode_image_data_url(prepared["blurred"]),
-            },
-            {
-                "caption": f"3. Whole-image K-means (K={result['kmeans_k']})",
-                "src": _encode_image_data_url(prepared["kmeans_quantised_bgr"]),
-            },
-            {
-                "caption": "4. Banana-colour prior",
-                "src": _encode_image_data_url(prepared["banana_colour_prior"], png=True),
-            },
-            {
-                "caption": "5. Cluster banana-likelihood",
-                "src": _encode_image_data_url(prepared["banana_likelihood_map"], png=True),
-            },
-            {
-                "caption": "6. Raw K-means banana candidate",
+                "caption": "2. K-means candidate",
                 "src": _encode_image_data_url(prepared["raw_banana_candidate"], png=True),
             },
             {
-                "caption": (
-                    f"7. Opening "
-                    f"({result['banana_opening_kernel']}x{result['banana_opening_kernel']})"
-                ),
-                "src": _encode_image_data_url(banana_steps["banana_opened"], png=True),
-            },
-            {
-                "caption": (
-                    f"8. Closing "
-                    f"({result['banana_closing_kernel']}x{result['banana_closing_kernel']})"
-                ),
-                "src": _encode_image_data_url(banana_steps["banana_closed"], png=True),
+                "caption": "3. Final mask",
+                "src": _encode_image_data_url(result["banana_mask"], png=True),
             },
         ],
         "blemish": [
             {
-                "caption": "1. Area allowed for blemish analysis",
-                "src": _encode_image_data_url(blemish_steps["inner_banana"], png=True),
+                "caption": "1. Banana mask",
+                "src": _encode_image_data_url(result["banana_mask"], png=True),
             },
             {
-                "caption": "2. Healthy colour-cluster family",
-                "src": _encode_image_data_url(
-                    blemish_steps["healthy_peel_candidates"], png=True
-                ),
-            },
-            {
-                "caption": "3. Second K-means using Lab a,b",
-                "src": _encode_image_data_url(
-                    blemish_steps["blemish_kmeans_quantised_bgr"]
-                ),
-            },
-            {
-                "caption": "4. a,b distance from healthy clusters",
-                "src": _encode_image_data_url(
-                    blemish_steps["blemish_cluster_distance_map"], png=True
-                ),
-            },
-            {
-                "caption": "5. Region blemish candidate",
+                "caption": "2. K-means candidate",
                 "src": _encode_image_data_url(
                     blemish_steps["kmeans_region_candidate"], png=True
                 ),
             },
             {
-                "caption": "6. Bright-highlight exclusion",
-                "src": _encode_image_data_url(
-                    blemish_steps["bright_highlight_mask"], png=True
-                ),
+                "caption": "3. Final mask",
+                "src": _encode_image_data_url(result["blemish_mask"], png=True),
             },
             {
-                "caption": "7. Raw blemish candidate",
-                "src": _encode_image_data_url(
-                    blemish_steps["raw_blemish_candidate"], png=True
-                ),
-            },
-            {
-                "caption": (
-                    f"8. Opening "
-                    f"({result['blemish_opening_kernel']}x{result['blemish_opening_kernel']})"
-                ),
-                "src": _encode_image_data_url(
-                    blemish_steps["blemish_opened"], png=True
-                ),
-            },
-            {
-                "caption": (
-                    f"9. Closing "
-                    f"({result['blemish_closing_kernel']}x{result['blemish_closing_kernel']})"
-                ),
-                "src": _encode_image_data_url(
-                    blemish_steps["blemish_closed"], png=True
-                ),
-            },
-            {
-                "caption": "10. Final blemish mask",
-                "src": _encode_image_data_url(
-                    blemish_steps["blemish_mask"], png=True
-                ),
+                "caption": "4. Overlay",
+                "src": _encode_image_data_url(overlay),
             },
         ],
     }
@@ -259,17 +176,14 @@ def analyse():
     try:
         image_file = request.files.get("image")
         if image_file is None:
-            return jsonify(
-                {"ok": False, "error": "Choose or capture an image first."}
-            ), 400
+            return jsonify({"ok": False, "error": "Choose or capture an image first."}), 400
 
         image = _decode_uploaded_image(image_file.read())
+        include_ripeness = _as_bool(request.form, "include_ripeness", True)
 
         defaults = _defaults()
         settings = {
-            "kmeans_k": _as_int(
-                request.form, "kmeans_k", defaults["kmeans_k"]
-            ),
+            "kmeans_k": _as_int(request.form, "kmeans_k", defaults["kmeans_k"]),
             "banana_score_threshold": _as_float(
                 request.form,
                 "banana_score_threshold",
@@ -281,9 +195,7 @@ def analyse():
             "banana_closing": _as_int(
                 request.form, "banana_closing", defaults["banana_closing"]
             ),
-            "blemish_k": _as_int(
-                request.form, "blemish_k", defaults["blemish_k"]
-            ),
+            "blemish_k": _as_int(request.form, "blemish_k", defaults["blemish_k"]),
             "blemish_chroma_threshold": _as_float(
                 request.form,
                 "blemish_chroma_threshold",
@@ -297,12 +209,9 @@ def analyse():
             ),
         }
 
-        # Match the current Streamlit app.py exactly.
         config = replace(
             ProcessingConfig(),
-            banana_cluster_score_threshold=float(
-                settings["banana_score_threshold"]
-            ),
+            banana_cluster_score_threshold=float(settings["banana_score_threshold"]),
             blemish_kmeans_k=int(settings["blemish_k"]),
             blemish_cluster_chroma_threshold=float(
                 settings["blemish_chroma_threshold"]
@@ -319,13 +228,6 @@ def analyse():
             config=config,
         )
 
-        # IMPORTANT: match current Streamlit behavior.
-        # Reuse the same final banana mask for ripeness classification.
-        ripeness_result = classify_ripeness(
-            image,
-            result["banana_mask"],
-        )
-
         overlay = overlay_result(
             image,
             result["banana_mask"],
@@ -333,72 +235,64 @@ def analyse():
         )
 
         images = {
-            "original": _encode_image_data_url(image),
-            "banana_mask": _encode_image_data_url(
-                result["banana_mask"], png=True
-            ),
-            "blemish_mask": _encode_image_data_url(
-                result["blemish_mask"], png=True
-            ),
+            "banana_mask": _encode_image_data_url(result["banana_mask"], png=True),
+            "blemish_mask": _encode_image_data_url(result["blemish_mask"], png=True),
             "overlay": _encode_image_data_url(overlay),
         }
 
-        if ripeness_result.get("available"):
-            segmented = ripeness_result.get("segmented_image")
-            ripeness_mask = ripeness_result.get("banana_mask")
+        ripeness_payload: dict[str, object]
+        ripeness_name: str | None = None
+        ripeness_confidence: float | None = None
 
+        if include_ripeness:
+            # Reuse the exact final banana mask for the segmented classifier.
+            ripeness_result = classify_ripeness(image, result["banana_mask"])
+            ripeness_name = (
+                str(ripeness_result.get("class_name", "Unknown"))
+                if ripeness_result.get("available")
+                else "Unavailable"
+            )
+            ripeness_confidence = (
+                float(ripeness_result.get("confidence", 0.0))
+                if ripeness_result.get("available")
+                else None
+            )
+
+            segmented = ripeness_result.get("segmented_image")
             if segmented is not None:
                 images["ripeness_segmented"] = _encode_image_data_url(segmented)
 
-            if ripeness_mask is not None:
-                images["ripeness_mask"] = _encode_image_data_url(
-                    ripeness_mask, png=True
-                )
-
-        prepared = result["prepared"]
-        blemish_steps = result["blemish_steps"]
+            ripeness_payload = {
+                "skipped": False,
+                "available": bool(ripeness_result.get("available")),
+                "error": ripeness_result.get("error"),
+                "probabilities": {
+                    str(name): float(value)
+                    for name, value in ripeness_result.get("probabilities", {}).items()
+                },
+            }
+        else:
+            # Blemish-only setting changes do not alter the shared banana mask,
+            # so the browser keeps the previous ripeness result and avoids an
+            # unnecessary neural-network inference on every slider movement.
+            ripeness_payload = {
+                "skipped": True,
+                "available": None,
+                "error": None,
+                "probabilities": {},
+            }
 
         payload = {
             "ok": True,
             "metrics": {
-                "ripeness": (
-                    str(ripeness_result.get("class_name", "Unknown"))
-                    if ripeness_result.get("available")
-                    else "Unavailable"
-                ),
-                "ripeness_confidence": (
-                    float(ripeness_result.get("confidence", 0.0))
-                    if ripeness_result.get("available")
-                    else None
-                ),
+                "ripeness": ripeness_name,
+                "ripeness_confidence": ripeness_confidence,
                 "blemish_percentage": float(result["blemish_percentage"]),
                 "surface_quality": str(result["quality_grade"]),
             },
-            "ripeness": {
-                "available": bool(ripeness_result.get("available")),
-                "error": ripeness_result.get("error"),
-                "probabilities": _json_safe(
-                    ripeness_result.get("probabilities", {})
-                ),
-            },
-            "segmentation_caption": (
-                "Shared banana segmentation: automatic K-means; selected clusters: "
-                f"{prepared['selected_clusters']}"
-            ),
+            "ripeness": ripeness_payload,
             "images": images,
-            "processing": _processing_images(result),
-            "cluster_summary": _json_safe(
-                prepared.get("cluster_summary", [])
-            ),
-            "blemish_cluster_summary": _json_safe(
-                blemish_steps.get("blemish_cluster_summary", [])
-            ),
-            "healthy_cluster_ids": _json_safe(
-                blemish_steps.get("healthy_cluster_ids", [])
-            ),
-            "blemish_cluster_ids": _json_safe(
-                blemish_steps.get("blemish_cluster_ids", [])
-            ),
+            "processing": _compact_processing_images(result, overlay),
         }
 
         return jsonify(payload)
