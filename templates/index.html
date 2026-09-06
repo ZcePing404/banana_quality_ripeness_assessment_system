@@ -230,6 +230,35 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="settings-group ripeness-method-group">
+                    <div class="settings-title">
+                        <strong>Ripeness classification</strong>
+                        <span>Select the trained model pipeline</span>
+                    </div>
+
+                    <div class="classification-options" role="radiogroup" aria-label="Ripeness classification method">
+                        <label class="classification-option">
+                            <input type="radio" name="ripeness_method" value="baseline" checked>
+                            <span class="classification-option-body">
+                                <strong>Baseline model</strong>
+                                <small>Classifies the original or cropped image directly.</small>
+                            </span>
+                        </label>
+
+                        <label class="classification-option">
+                            <input type="radio" name="ripeness_method" value="segmented">
+                            <span class="classification-option-body">
+                                <strong>Segmented model</strong>
+                                <small>Uses the final banana mask and removes the background first.</small>
+                            </span>
+                        </label>
+                    </div>
+
+                    <p id="ripeness-method-help" class="classification-help">
+                        Baseline selected: no segmentation is applied to the ripeness classifier input.
+                    </p>
+                </div>
             </article>
 
             <div class="analysis-column">
@@ -273,7 +302,10 @@
                     </div>
 
                     <div class="mini-process ripeness-mini">
-                        <div class="mini-process-title"><strong>Ripeness prediction</strong></div>
+                        <div class="mini-process-title ripeness-title-row">
+                            <strong>Ripeness prediction</strong>
+                            <span id="ripeness-method-badge" class="method-badge">Baseline model</span>
+                        </div>
                         <div id="top-ripeness-processing" class="ripeness-process-grid">
                             <div class="empty-process ripeness-image-placeholder"><span>1</span><p>Classifier input</p></div>
                             <div class="ripeness-info-stack">

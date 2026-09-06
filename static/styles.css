@@ -1141,6 +1141,7 @@ body.modal-open { overflow: hidden; }
     .image-grid.one img { height: 260px; max-height: 260px; }
 }
 
+
 /* ------------------------------------------------------------------
    Mobile-only live result dock
    Keeps the latest visual result visible while the user adjusts the
@@ -1381,5 +1382,111 @@ body.modal-open { overflow: hidden; }
 
     .mobile-live-metric {
         padding-inline: 7px;
+    }
+}
+
+
+
+/* ------------------------------------------------------------------
+   Ripeness model selector
+   ------------------------------------------------------------------ */
+
+.ripeness-method-group .settings-title {
+    background: #eef5f1;
+}
+
+.classification-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+}
+
+.classification-option {
+    position: relative;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.classification-option > input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.classification-option-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 86px;
+    padding: 13px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    transition:
+        border-color 150ms ease,
+        background 150ms ease,
+        box-shadow 150ms ease;
+}
+
+.classification-option-body strong {
+    color: var(--ink);
+    font-size: 0.82rem;
+}
+
+.classification-option-body small {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.4;
+}
+
+.classification-option:hover .classification-option-body {
+    border-color: #b8c9bf;
+    background: var(--panel-soft);
+}
+
+.classification-option > input:checked + .classification-option-body {
+    border-color: var(--green);
+    background: var(--green-soft);
+    box-shadow: 0 0 0 2px rgba(47, 125, 89, 0.08);
+}
+
+.classification-option > input:focus-visible + .classification-option-body {
+    outline: 3px solid rgba(47, 125, 89, 0.14);
+    outline-offset: 2px;
+}
+
+.classification-help {
+    margin: 0;
+    padding: 0 12px 12px;
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.ripeness-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.method-badge {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border: 1px solid rgba(47, 125, 89, 0.16);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--green-dark);
+    font-size: 0.68rem;
+    font-weight: 750;
+}
+
+@media (max-width: 620px) {
+    .classification-options {
+        grid-template-columns: 1fr;
+    }
+
+    .classification-option-body {
+        min-height: 0;
     }
 }

@@ -160,6 +160,56 @@ if (typeof mobilePreviewMedia.addEventListener === "function") {
     mobilePreviewMedia.addListener(handleMobilePreviewViewportChange);
 }
 
+const ripenessMethodInputs = Array.from(
+    document.querySelectorAll('input[name="ripeness_method"]')
+);
+
+function selectedRipenessMethod() {
+    return (
+        document.querySelector('input[name="ripeness_method"]:checked')?.value
+        || "baseline"
+    );
+}
+
+function bananaSettingAffectsRipeness(id) {
+    return (
+        selectedRipenessMethod() === "segmented"
+        && bananaSettingIds.has(id)
+    );
+}
+
+function updateRipenessMethodUI() {
+    const method = selectedRipenessMethod();
+    const badge = document.getElementById("ripeness-method-badge");
+    const help = document.getElementById("ripeness-method-help");
+
+    if (badge) {
+        badge.textContent = (
+            method === "baseline"
+                ? "Baseline model"
+                : "Segmented model"
+        );
+    }
+
+    if (help) {
+        help.textContent = (
+            method === "baseline"
+                ? "Baseline selected: the ripeness classifier receives the original or cropped image directly."
+                : "Segmented selected: the final banana mask is applied first and the classifier receives a background-removed image."
+        );
+    }
+}
+
+for (const input of ripenessMethodInputs) {
+    input.addEventListener("change", () => {
+        // Invalidate an older in-flight response from the previous model.
+        analysisEpoch += 1;
+        updateRipenessMethodUI();
+        queueAnalysis(true, true);
+    });
+}
+
+updateRipenessMethodUI();
 // ---------------------------------------------------------------------
 // Settings: range + numeric input synchronisation
 // ---------------------------------------------------------------------
@@ -199,7 +249,7 @@ function normaliseNumberInput(id, { analyse = true } = {}) {
     range.value = String(value);
     number.value = range.value;
 
-    if (analyse) queueAnalysis(bananaSettingIds.has(id));
+    if (analyse) queueAnalysis(bananaSettingAffectsRipeness(id));
     return true;
 }
 
@@ -212,7 +262,7 @@ function bindSetting(id) {
 
     range.addEventListener("input", () => {
         syncNumberFromRange(id);
-        queueAnalysis(bananaSettingIds.has(id));
+        queueAnalysis(bananaSettingAffectsRipeness(id));
     });
 
     // Block scientific notation, signs and other characters that a native
@@ -254,7 +304,7 @@ function bindSetting(id) {
 
         range.value = String(numeric);
         number.value = range.value;
-        queueAnalysis(bananaSettingIds.has(id));
+        queueAnalysis(bananaSettingAffectsRipeness(id));
     });
 
     number.addEventListener("blur", () => normaliseNumberInput(id));
@@ -270,7 +320,10 @@ document.getElementById("reset-settings").addEventListener("click", () => {
         range.value = range.dataset.default;
         syncNumberFromRange(id);
     }
-    queueAnalysis(true, true);
+    queueAnalysis(
+        selectedRipenessMethod() === "segmented",
+        true
+    );
 });
 
 // ---------------------------------------------------------------------
@@ -873,21 +926,39 @@ function renderRipenessProcessing(data) {
 
     const container = document.getElementById("top-ripeness-processing");
     const warning = document.getElementById("ripeness-warning");
+    const badge = document.getElementById("ripeness-method-badge");
+
     container.innerHTML = "";
+
+    if (badge && data.ripeness?.method_label) {
+        badge.textContent = data.ripeness.method_label;
+    }
 
     if (!data.ripeness?.available) {
         const unavailable = document.createElement("div");
         unavailable.className = "ripeness-unavailable";
         unavailable.textContent = "Ripeness prediction unavailable";
         container.appendChild(unavailable);
-        warning.textContent = data.ripeness?.error || "Ripeness classification is unavailable.";
+        warning.textContent = (
+            data.ripeness?.error
+            || "Ripeness classification is unavailable."
+        );
         warning.classList.remove("hidden");
         return;
     }
 
     warning.classList.add("hidden");
 
-    const inputCard = makeImageCard(data.images.ripeness_segmented, "1. Classifier input");
+    const inputCaption = (
+        data.ripeness?.input_caption
+        || "Classifier input"
+    );
+
+    const inputCard = makeImageCard(
+        data.images.ripeness_input,
+        `1. ${inputCaption}`
+    );
+
     if (inputCard) {
         inputCard.classList.add("mini-card", "ripeness-input-card");
         container.appendChild(inputCard);
@@ -898,21 +969,35 @@ function renderRipenessProcessing(data) {
 
     const predictionCard = document.createElement("div");
     predictionCard.className = "ripeness-result-card";
+
     const confidence = data.metrics.ripeness_confidence == null
         ? ""
         : `${(data.metrics.ripeness_confidence * 100).toFixed(1)}% confidence`;
+
     predictionCard.innerHTML = `
-        <span>3. Prediction</span>
+        <span>3. Prediction · ${data.ripeness.method_label || ""}</span>
         <strong>${data.metrics.ripeness || "—"}</strong>
         <small>${confidence}</small>`;
 
     const probabilityCard = document.createElement("div");
     probabilityCard.className = "ripeness-probability-card";
+
     const probabilityTitle = document.createElement("span");
     probabilityTitle.textContent = "2. Class probabilities";
-    probabilityCard.append(probabilityTitle, renderProbabilityRows(data.ripeness.probabilities, true));
 
-    infoStack.append(predictionCard, probabilityCard);
+    probabilityCard.append(
+        probabilityTitle,
+        renderProbabilityRows(
+            data.ripeness.probabilities,
+            true
+        )
+    );
+
+    infoStack.append(
+        predictionCard,
+        probabilityCard
+    );
+
     container.appendChild(infoStack);
 }
 
@@ -996,6 +1081,7 @@ async function requestAnalysis(includeRipeness) {
     const form = new FormData();
     form.append("image", blob, filename);
     form.append("include_ripeness", includeRipeness ? "1" : "0");
+    form.append("ripeness_method", selectedRipenessMethod());
 
     for (const id of settingIds) {
         form.append(id, document.getElementById(id).value);

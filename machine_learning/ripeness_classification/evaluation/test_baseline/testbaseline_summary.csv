@@ -1,2 +1,2 @@
 accuracy,macro_precision,macro_recall,macro_f1,correct,incorrect,total
-1.0,1.0,1.0,1.0,80,0,80
+1.0,1.0,1.0,1.0,70,0,70

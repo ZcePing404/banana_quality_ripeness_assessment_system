@@ -1,2 +1,0 @@
-test_images,accuracy,precision_macro,recall_macro,f1_macro,precision_weighted,recall_weighted,f1_weighted
-60,1.0,1.0,1.0,1.0,1.0,1.0,1.0

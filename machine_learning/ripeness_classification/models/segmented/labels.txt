@@ -1,3 +1,4 @@
 0 Unripe
 1 Ripe
 2 Overripe
+3 Rotten

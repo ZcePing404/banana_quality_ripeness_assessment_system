@@ -1,7 +1,0 @@
-,precision,recall,f1-score,support
-Overripe,1.0,1.0,1.0,20.0
-Ripe,1.0,1.0,1.0,20.0
-Unripe,1.0,1.0,1.0,20.0
-accuracy,1.0,1.0,1.0,1.0
-macro avg,1.0,1.0,1.0,60.0
-weighted avg,1.0,1.0,1.0,60.0

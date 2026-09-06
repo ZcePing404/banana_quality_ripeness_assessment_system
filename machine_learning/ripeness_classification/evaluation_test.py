@@ -30,19 +30,19 @@ BASE_DIR = Path(__file__).resolve().parent
 # CHANGE THESE TWO VALUES depending on which model you test
 # ------------------------------------------------------------
 
-MODEL_DIR = BASE_DIR / "models" / "baseline"
+MODEL_DIR = BASE_DIR / "models" / "segmented"
 
 TEST_DIR = (
     BASE_DIR
     / "data"
-    / "raw"
+    / "segmented"
     / "test"
 )
 
 OUTPUT_DIR = (
     BASE_DIR
     / "evaluation"
-    / "test_baseline"
+    / "test_segmented"
 )
 
 MODEL_PATH = MODEL_DIR / "keras_model.h5"

@@ -14,7 +14,7 @@ except ImportError:  # Allows: python segment_dataset.py
 
 BASE_DIR = Path(__file__).resolve().parent
 
-INPUT_ROOT = BASE_DIR / "data" / "raw"
+INPUT_ROOT = BASE_DIR / "data" / "raw_by_class"
 OUTPUT_ROOT = BASE_DIR / "data" / "segmented"
 MASK_ROOT = BASE_DIR / "data" / "segmentation_masks"
 
@@ -28,6 +28,7 @@ CLASSES = [
     "Unripe",
     "Ripe",
     "Overripe",
+    "Rotten",
 ]
 
 SUPPORTED_EXTENSIONS = {
