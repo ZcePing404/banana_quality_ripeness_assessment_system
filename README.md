@@ -1,3 +1,7 @@
+# Start here
+
+See [START_HERE.md](START_HERE.md) for the updated Flask application, calibration, PDF and video instructions.
+
 # Banana Surface Quality Analysis
 
 A Streamlit-based classical image-processing prototype for banana segmentation and blemish quantification.

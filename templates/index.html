@@ -20,21 +20,24 @@
         <section class="workspace-grid">
             <article class="workspace-card input-settings-card">
                 <div class="card-heading">
-                    <span class="step-number">1</span>
                     <div>
                         <h2>Image Input</h2>
-                        <p>Upload one image, multiple images, a folder, or capture a camera frame. Analysis starts automatically.</p>
+                        <p>Upload images, capture a still frame, or analyse an uploaded/live video stream.</p>
                     </div>
                 </div>
 
-                <div class="source-tabs" role="tablist" aria-label="Image source">
+                <div class="source-tabs source-tabs-three" role="tablist" aria-label="Input source">
                     <label class="source-option">
                         <input type="radio" name="source" value="upload" checked>
                         <span>Upload image(s)</span>
                     </label>
                     <label class="source-option">
                         <input type="radio" name="source" value="camera">
-                        <span>Use camera</span>
+                        <span>Camera</span>
+                    </label>
+                    <label class="source-option">
+                        <input type="radio" name="source" value="video">
+                        <span>Video</span>
                     </label>
                 </div>
 
@@ -118,6 +121,33 @@
                     </div>
                 </div>
 
+                <div id="video-panel" class="source-panel hidden">
+                    <div class="video-input-card">
+                        <div class="camera-tip">
+                            Analyse an uploaded video frame-by-frame, or start live camera analysis. Stop on a useful frame, then add that frame to Batch Assessment for crop, calibration and manual tuning.
+                        </div>
+                        <label class="upload-box compact-upload" for="video-file">
+                            <span class="upload-symbol" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 5h11v14H4z"/><path d="M15 9l5-3v12l-5-3z"/>
+                                </svg>
+                            </span>
+                            <strong>Select video</strong>
+                            <span>MP4, MOV, WEBM or another browser-supported video</span>
+                        </label>
+                        <input id="video-file" class="file-input" type="file" accept="video/*">
+                        <video id="analysis-video" muted playsinline controls class="hidden"></video>
+                        <img id="video-frozen-frame" class="video-frozen-frame hidden" alt="Frozen analysed video frame">
+                        <div class="button-row video-actions">
+                            <button id="video-start" type="button" class="secondary">Analyse uploaded video</button>
+                            <button id="video-camera" type="button" class="secondary">Start live analysis</button>
+                            <button id="video-stop" type="button" class="ghost" disabled>Stop &amp; freeze</button>
+                            <button id="video-add-frame" type="button" class="secondary" disabled>Add current frame to batch</button>
+                        </div>
+                        <p id="video-status" class="video-status">Select a video or start live analysis. Sampled frames update the Final Assessment but are not stored automatically. Use Add current frame to batch to keep a specific frame.</p>
+                    </div>
+                </div>
+
                 <div id="crop-editor" class="crop-editor hidden">
                     <div class="crop-heading">
                         <div>
@@ -138,7 +168,14 @@
                     </div>
                 </div>
 
-                <div id="status" class="status" aria-live="polite"></div>
+                <div id="calibration-editor" class="settings-group hidden">
+<div class="settings-title"><strong>Spatial calibration</strong><span id="calibration-status">Off</span></div>
+<div class="calibration-controls"><label><input id="calibration-enable" type="checkbox"> Enable reference line</label>
+<label>Reference length (cm) <input id="reference-size-cm" type="number" min="0.01" step="0.1" value="10"></label>
+<p>Click the two ends of a known length in the image. Keep the reference on the same plane as the banana.</p>
+<canvas id="calibration-canvas"></canvas><p id="calibration-point-help">0 / 2 reference points selected.</p>
+<button id="clear-calibration-points" type="button" class="ghost">Clear reference line</button></div></div>
+<div id="status" class="status" aria-live="polite"></div>
 
                 <div class="section-divider"></div>
 
@@ -274,7 +311,6 @@
             <article class="workspace-card processing-card">
                 <div class="card-heading card-heading-split">
                     <div class="heading-left">
-                        <span class="step-number">2</span>
                         <div>
                             <h2>Processing Details</h2>
                             <p>Key intermediate stages update with the current settings.</p>
@@ -287,26 +323,26 @@
                     </label>
                 </div>
 
-                <div id="top-processing-details">
+                <div id="top-processing-details"><div class="mini-process"><div class="mini-process-title"><strong>Preprocessing</strong></div><div id="top-preprocessing" class="mini-process-grid three-stage"><div class="empty-process">Aspect-ratio resize</div><div class="process-arrow"></div><div class="empty-process">CLAHE enhancement</div><div class="process-arrow"></div><div class="empty-process">Gaussian filtering</div></div></div>
                     <div class="mini-process banana-mini">
                         <div class="mini-process-title"><strong>Banana segmentation</strong></div>
                         <div id="top-banana-processing" class="mini-process-grid three-stage">
-                            <div class="empty-process"><span>1</span><p>Input</p></div>
+                            <div class="empty-process"><p>Input</p></div>
                             <div class="process-arrow" aria-hidden="true"></div>
-                            <div class="empty-process"><span>2</span><p>K-means candidate</p></div>
+                            <div class="empty-process"><p>K-means candidate</p></div>
                             <div class="process-arrow" aria-hidden="true"></div>
-                            <div class="empty-process"><span>3</span><p>Final mask</p></div>
+                            <div class="empty-process"><p>Final mask</p></div>
                         </div>
                     </div>
 
                     <div class="mini-process blemish-mini">
                         <div class="mini-process-title"><strong>Blemish detection</strong></div>
                         <div id="top-blemish-processing" class="mini-process-grid three-stage">
-                            <div class="empty-process"><span>1</span><p>Banana mask</p></div>
+                            <div class="empty-process"><p>Banana mask</p></div>
                             <div class="process-arrow" aria-hidden="true"></div>
-                            <div class="empty-process"><span>2</span><p>K-means candidate</p></div>
+                            <div class="empty-process"><p>K-means candidate</p></div>
                             <div class="process-arrow" aria-hidden="true"></div>
-                            <div class="empty-process"><span>3</span><p>Final mask</p></div>
+                            <div class="empty-process"><p>Final mask</p></div>
                         </div>
                     </div>
 
@@ -316,10 +352,10 @@
                             <span id="ripeness-method-badge" class="method-badge">Baseline model</span>
                         </div>
                         <div id="top-ripeness-processing" class="ripeness-process-grid">
-                            <div class="empty-process ripeness-image-placeholder"><span>1</span><p>Classifier input</p></div>
+                            <div class="empty-process ripeness-image-placeholder"><p>Classifier input</p></div>
                             <div class="ripeness-info-stack">
-                                <div class="empty-process ripeness-result-placeholder"><span>3</span><p>Prediction</p></div>
-                                <div class="empty-process ripeness-probability-placeholder"><span>2</span><p>Class probabilities</p></div>
+                                <div class="empty-process ripeness-result-placeholder"><p>Prediction</p></div>
+                                <div class="empty-process ripeness-probability-placeholder"><p>Class probabilities</p></div>
                             </div>
                         </div>
                         <div id="ripeness-warning" class="warning hidden"></div>
@@ -332,11 +368,22 @@
             <section id="batch-results-section" class="results-section batch-results-section hidden">
                 <div class="results-header batch-results-header">
                     <div>
-                        <span class="eyebrow">3. Batch Analysis</span>
+                        <span class="eyebrow">Batch Analysis</span>
                         <h2>Batch Assessment</h2>
-                        <p id="batch-summary-text">Selected images will be processed one at a time.</p>
+                        <p id="batch-summary-text">Uploaded images, captured photos and selected video frames remain here until you delete them or close the page. PDF export uses only the results in this table.</p>
                     </div>
-                    <button id="batch-reanalyse" class="ghost" type="button">Re-analyse batch</button>
+                    <div class="batch-header-actions">
+                        <label class="batch-shared-toggle" for="batch-shared-settings">
+                            <input id="batch-shared-settings" type="checkbox">
+                            <span>
+                                <strong>Use same banana & blemish settings for all</strong>
+                                <small>Optional. Calibration remains individual for each image.</small>
+                            </span>
+                        </label>
+                        <div class="button-row batch-action-buttons">
+                            <button id="batch-export-pdf" class="secondary" type="button">Export PDF</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="batch-progress-wrap">
@@ -348,7 +395,7 @@
                 </div>
 
                 <div id="batch-settings-warning" class="batch-settings-warning hidden">
-                    Analysis settings changed. Select <strong>Re-analyse batch</strong> to refresh all results.
+                    Unsaved settings changed. Open the image you want to keep, then use the Save icon. When shared settings are enabled, saving automatically updates the other batch images.
                 </div>
 
                 <div class="batch-table-wrap">
@@ -360,8 +407,9 @@
                                 <th>Confidence</th>
                                 <th>Blemish</th>
                                 <th>Surface quality</th>
+                                <th>Estimated size</th>
                                 <th>Status</th>
-                                <th></th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="batch-results-body"></tbody>
@@ -372,7 +420,7 @@
             <section id="results-section" class="results-section hidden">
             <div class="results-header">
                 <div>
-                    <span class="eyebrow">3. Analysis Results</span>
+                    <span class="eyebrow">Analysis Results</span>
                     <h2>Final Assessment</h2>
                     <p>Current ripeness, visible blemish percentage and surface-quality grade.</p>
                 </div>
@@ -421,6 +469,20 @@
                             <span>Surface quality</span>
                             <strong id="metric-quality">—</strong>
                             <small id="metric-quality-note" class="result-note">Quality grade</small>
+                        </div>
+                    </div>
+                    <div id="metric-size-card" class="result-stat">
+                        <div class="result-icon" aria-hidden="true">
+                            <img
+                                class="result-icon-image"
+                                src="{{ url_for('static', filename='images/measure_icon.png') }}"
+                                alt=""
+                            >
+                        </div>
+                        <div class="result-copy">
+                            <span>Estimated size</span>
+                            <strong id="metric-size">N/A</strong>
+                            <small id="metric-size-note" class="result-note">2-point calibration required</small>
                         </div>
                     </div>
                 </aside>

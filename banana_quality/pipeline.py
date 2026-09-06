@@ -1,5 +1,3 @@
-"""High-level orchestration for automatic banana segmentation and blemish analysis."""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -26,11 +24,7 @@ def analyse_image(
     blemish_closing_kernel: int = 5,
     config: ProcessingConfig | None = None,
 ) -> dict[str, object]:
-    """Run automatic K-means banana segmentation followed by blemish analysis.
-
-    ``segmentation_mode`` is retained only so the existing evaluation notebook,
-    which passes ``"mode_a"``, continues to run without modification.
-    """
+    # Run automatic K-means banana segmentation followed by blemish analysis.
     mode = str(segmentation_mode).strip().lower()
     if mode not in {"mode_a", "a", "kmeans", "automatic", "automatic k-means"}:
         raise ValueError("Only automatic K-means banana segmentation is supported.")

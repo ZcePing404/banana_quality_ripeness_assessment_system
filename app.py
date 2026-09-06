@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import base64
+import json
+from io import BytesIO
+from flask import send_file
+from banana_quality.calibration import calculate_pixels_per_cm_from_line, measure_banana_from_mask, draw_measurement_box
 
 import cv2
 import numpy as np
@@ -132,37 +136,41 @@ def _compact_processing_images(
     blemish_steps = result["blemish_steps"]
 
     return {
+        "preprocessing": [
+            {"caption": caption, "src": _encode_image_data_url(prepared[key])}
+            for caption, key in [("Aspect-ratio resize", "working_image"), ("CLAHE enhancement", "clahe_enhanced"), ("Gaussian filtering", "blurred")]
+        ],
         "banana": [
             {
-                "caption": "1. Input",
+                "caption": "Input",
                 "src": _encode_image_data_url(prepared["working_image"]),
             },
             {
-                "caption": "2. K-means candidate",
+                "caption": "K-means candidate",
                 "src": _encode_image_data_url(prepared["raw_banana_candidate"], png=True),
             },
             {
-                "caption": "3. Final mask",
+                "caption": "Final mask",
                 "src": _encode_image_data_url(result["banana_mask"], png=True),
             },
         ],
         "blemish": [
             {
-                "caption": "1. Banana mask",
+                "caption": "Banana mask",
                 "src": _encode_image_data_url(result["banana_mask"], png=True),
             },
             {
-                "caption": "2. K-means candidate",
+                "caption": "K-means candidate",
                 "src": _encode_image_data_url(
                     blemish_steps["kmeans_region_candidate"], png=True
                 ),
             },
             {
-                "caption": "3. Final mask",
+                "caption": "Final mask",
                 "src": _encode_image_data_url(result["blemish_mask"], png=True),
             },
             {
-                "caption": "4. Overlay",
+                "caption": "Overlay",
                 "src": _encode_image_data_url(overlay),
             },
         ],
@@ -247,6 +255,18 @@ def analyse():
             result["banana_mask"],
             result["blemish_mask"],
         )
+
+        calibration = {"applied": False}
+        if _as_bool(request.form, "calibration_enabled", False):
+            points = np.asarray(json.loads(request.form.get("calibration_points", "[]")), dtype=float)
+            if points.shape != (2, 2) or not np.isfinite(points).all():
+                raise ValueError("Select two valid reference points.")
+            if (points < 0).any() or (points[:, 0] >= image.shape[1]).any() or (points[:, 1] >= image.shape[0]).any():
+                raise ValueError("Reference points must lie inside this image.")
+            scale = calculate_pixels_per_cm_from_line(points, float(request.form.get("reference_size_cm", 0)))
+            measurement = measure_banana_from_mask(result["banana_mask"], scale)
+            overlay = draw_measurement_box(overlay, measurement)
+            calibration = {"applied": True, **{key: float(measurement[key]) for key in ("length_cm", "width_cm", "pixels_per_cm")}}
 
         # Batch uploads request a compact response so dozens of results do not
         # keep several base64 diagnostic images in browser memory.  The same
@@ -341,6 +361,8 @@ def analyse():
 
         payload = {
             "ok": True,
+            "calibration": calibration,
+            "settings": settings,
             "metrics": {
                 "ripeness": ripeness_name,
                 "ripeness_confidence": ripeness_confidence,
@@ -360,14 +382,33 @@ def analyse():
 
         return jsonify(payload)
 
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
+        app.logger.exception("Image analysis failed")
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+
+@app.errorhandler(413)
+def too_large(error):
+    return jsonify(ok=False, error="Image exceeds the 16 MB upload limit. Resize or compress it and retry."), 413
+
+@app.post("/api/report")
+def report():
+    from flask_ui.reporting import build_report
+    body = request.get_json(silent=True) or {}
+    results = body.get("results", [])
+    if not isinstance(results, list) or not results or len(results) > 200:
+        return jsonify(ok=False, error="Supply between 1 and 200 results."), 400
+    try:
+        return send_file(BytesIO(build_report(results)), mimetype="application/pdf", as_attachment=True, download_name="banana_assessment_report.pdf")
+    except (ValueError, TypeError, KeyError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
 
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=True,
+        debug=False,
         use_reloader=False,
     )
