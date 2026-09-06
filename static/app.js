@@ -37,6 +37,129 @@ const bananaSettingIds = new Set([
     "banana_closing",
 ]);
 
+// Mobile-only compact result dock. The user explicitly enables it with a
+// checkbox. Closing the dock also clears the checkbox, while the latest result
+// is retained so checking it again immediately restores the current preview.
+const mobileLivePreview = document.getElementById("mobile-live-preview");
+const mobilePreviewImage = document.getElementById("mobile-preview-image");
+const mobilePreviewState = document.getElementById("mobile-preview-state");
+const mobilePreviewRipeness = document.getElementById("mobile-preview-ripeness");
+const mobilePreviewBlemish = document.getElementById("mobile-preview-blemish");
+const mobilePreviewQuality = document.getElementById("mobile-preview-quality");
+const mobilePreviewToggle = document.getElementById("mobile-live-toggle");
+const mobilePreviewClose = document.getElementById("mobile-preview-close");
+const mobilePreviewMedia = window.matchMedia("(max-width: 700px)");
+let latestMobilePreview = null;
+
+function mobilePreviewEnabled() {
+    return Boolean(mobilePreviewToggle?.checked && mobilePreviewMedia.matches);
+}
+
+function setMobilePreviewUpdating(isUpdating) {
+    if (!mobileLivePreview || !mobilePreviewEnabled() || mobileLivePreview.classList.contains("hidden")) return;
+    mobileLivePreview.classList.toggle("is-updating", isUpdating);
+    if (mobilePreviewState) {
+        mobilePreviewState.textContent = isUpdating ? "Updating…" : "Updated";
+    }
+}
+
+function updateMobilePreviewContents(data, elapsedSeconds) {
+    if (!data?.metrics) return;
+
+    const metrics = data.metrics;
+    const blemishValue = Number(metrics.blemish_percentage);
+
+    // Blemish-only updates intentionally skip the ripeness model. Keep the
+    // previous ripeness value instead of replacing it with a dash.
+    if (!data.ripeness?.skipped && metrics.ripeness && mobilePreviewRipeness) {
+        mobilePreviewRipeness.textContent = metrics.ripeness;
+    }
+    if (mobilePreviewBlemish) {
+        mobilePreviewBlemish.textContent = Number.isFinite(blemishValue)
+            ? `${blemishValue.toFixed(2)}%`
+            : "—";
+    }
+    if (mobilePreviewQuality) {
+        mobilePreviewQuality.textContent = metrics.surface_quality || "—";
+    }
+    if (mobilePreviewImage && data.images?.overlay) {
+        mobilePreviewImage.src = data.images.overlay;
+    }
+    if (mobilePreviewState) {
+        mobilePreviewState.textContent = Number.isFinite(elapsedSeconds)
+            ? `Updated ${elapsedSeconds.toFixed(1)} s`
+            : "Updated";
+    }
+}
+
+function showMobilePreview(data, elapsedSeconds) {
+    if (!mobileLivePreview || !data?.metrics) return;
+
+    latestMobilePreview = { data, elapsedSeconds };
+    updateMobilePreviewContents(data, elapsedSeconds);
+
+    if (!mobilePreviewEnabled()) {
+        hideMobilePreview({ clearContent: false });
+        return;
+    }
+
+    mobileLivePreview.classList.remove("hidden", "is-updating");
+    document.body.classList.add("mobile-preview-active");
+}
+
+function hideMobilePreview({ clearContent = false } = {}) {
+    if (!mobileLivePreview) return;
+    mobileLivePreview.classList.add("hidden");
+    mobileLivePreview.classList.remove("is-updating");
+    document.body.classList.remove("mobile-preview-active");
+
+    if (!clearContent) return;
+
+    latestMobilePreview = null;
+    if (mobilePreviewImage) mobilePreviewImage.removeAttribute("src");
+    if (mobilePreviewRipeness) mobilePreviewRipeness.textContent = "—";
+    if (mobilePreviewBlemish) mobilePreviewBlemish.textContent = "—";
+    if (mobilePreviewQuality) mobilePreviewQuality.textContent = "—";
+    if (mobilePreviewState) mobilePreviewState.textContent = "Ready";
+}
+
+if (mobilePreviewToggle) {
+    mobilePreviewToggle.addEventListener("change", () => {
+        if (!mobilePreviewToggle.checked) {
+            hideMobilePreview({ clearContent: false });
+            return;
+        }
+
+        if (latestMobilePreview && mobilePreviewMedia.matches) {
+            showMobilePreview(latestMobilePreview.data, latestMobilePreview.elapsedSeconds);
+        }
+    });
+}
+
+if (mobilePreviewClose) {
+    mobilePreviewClose.addEventListener("click", () => {
+        if (mobilePreviewToggle) mobilePreviewToggle.checked = false;
+        hideMobilePreview({ clearContent: false });
+    });
+}
+
+function handleMobilePreviewViewportChange() {
+    if (!mobilePreviewMedia.matches) {
+        hideMobilePreview({ clearContent: false });
+        return;
+    }
+
+    if (mobilePreviewEnabled() && latestMobilePreview) {
+        showMobilePreview(latestMobilePreview.data, latestMobilePreview.elapsedSeconds);
+    }
+}
+
+if (typeof mobilePreviewMedia.addEventListener === "function") {
+    mobilePreviewMedia.addEventListener("change", handleMobilePreviewViewportChange);
+} else if (typeof mobilePreviewMedia.addListener === "function") {
+    mobilePreviewMedia.addListener(handleMobilePreviewViewportChange);
+}
+
 // ---------------------------------------------------------------------
 // Settings: range + numeric input synchronisation
 // ---------------------------------------------------------------------
@@ -166,6 +289,12 @@ for (const radio of document.querySelectorAll('input[name="source"]')) {
         const useCamera = radio.value === "camera" && radio.checked;
         uploadPanel.classList.toggle("hidden", useCamera);
         cameraPanel.classList.toggle("hidden", !useCamera);
+
+        if (useCamera) {
+            updateCameraAvailability();
+        } else {
+            stopCameraStream();
+        }
     });
 }
 
@@ -183,6 +312,8 @@ imageFile.addEventListener("change", async () => {
     }
 
     analysisEpoch += 1;
+    stopCameraStream();
+    if (mobileCameraInput) mobileCameraInput.value = "";
     currentFileName = file.name;
     originalImageBlob = file;
     activeImageBlob = file;
@@ -218,25 +349,135 @@ document.getElementById("clear-upload").addEventListener("click", clearUpload);
 // Camera
 // ---------------------------------------------------------------------
 
+const liveCameraArea = document.getElementById("live-camera-area");
+const cameraFallback = document.getElementById("camera-fallback");
+const mobileCameraInput = document.getElementById("mobile-camera-input");
+const cameraSelect = document.getElementById("camera-select");
 const video = document.getElementById("camera-video");
 const canvas = document.getElementById("camera-canvas");
 const startCamera = document.getElementById("start-camera");
 const captureCamera = document.getElementById("capture-camera");
 const stopCamera = document.getElementById("stop-camera");
 
-startCamera.addEventListener("click", async () => {
+function liveCameraSupported() {
+    // getUserMedia is normally available on HTTPS and on localhost/127.0.0.1.
+    // A phone opening http://192.168.x.x:5000 is an insecure context, so the
+    // browser may intentionally hide navigator.mediaDevices.
+    return Boolean(
+        window.isSecureContext &&
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === "function"
+    );
+}
+
+function updateCameraAvailability() {
+    const supported = liveCameraSupported();
+    liveCameraArea.classList.toggle("hidden", !supported);
+    cameraFallback.classList.toggle("hidden", supported);
+
+    if (!supported) {
+        stopCameraStream();
+        const activeSource = document.querySelector('input[name="source"]:checked')?.value;
+        if (activeSource === "camera") {
+            setStatus(
+                "Live preview is unavailable on this connection. Use Take photo to use the phone camera.",
+                "info"
+            );
+        }
+    }
+
+    return supported;
+}
+
+function buildVideoConstraints(deviceId = "") {
+    const videoConstraints = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+    };
+
+    if (deviceId) {
+        videoConstraints.deviceId = { exact: deviceId };
+    } else {
+        // On phones this prefers the rear camera. Desktop browsers simply use
+        // their normal/default camera when facingMode is not meaningful.
+        videoConstraints.facingMode = { ideal: "environment" };
+    }
+
+    return { video: videoConstraints, audio: false };
+}
+
+async function refreshCameraList(preferredDeviceId = "") {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+        return;
+    }
+
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-            audio: false,
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((device) => device.kind === "videoinput");
+        const activeDeviceId = preferredDeviceId ||
+            cameraStream?.getVideoTracks?.()[0]?.getSettings?.().deviceId ||
+            cameraSelect.value || "";
+
+        cameraSelect.innerHTML = "";
+
+        if (cameras.length === 0) {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "Default camera";
+            cameraSelect.appendChild(option);
+            cameraSelect.disabled = true;
+            return;
+        }
+
+        cameras.forEach((device, index) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+            option.textContent = device.label || `Camera ${index + 1}`;
+            cameraSelect.appendChild(option);
         });
+
+        cameraSelect.disabled = false;
+        if (activeDeviceId && cameras.some((camera) => camera.deviceId === activeDeviceId)) {
+            cameraSelect.value = activeDeviceId;
+        }
+    } catch (_) {
+        // Camera selection is optional; the default camera can still be used.
+    }
+}
+
+async function startCameraWithDevice(deviceId = "") {
+    if (!updateCameraAvailability()) return;
+
+    try {
+        stopCameraStream();
+        cameraStream = await navigator.mediaDevices.getUserMedia(
+            buildVideoConstraints(deviceId)
+        );
         video.srcObject = cameraStream;
+
+        // Calling play explicitly improves behaviour on some browsers even
+        // though the <video> element is also autoplay + playsinline.
+        try { await video.play(); } catch (_) {}
+
         captureCamera.disabled = false;
         stopCamera.disabled = false;
-        setStatus("Camera ready.", "info");
+        await refreshCameraList(
+            cameraStream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId
+        );
+        setStatus("Camera ready. Choose a different camera above if needed.", "info");
     } catch (error) {
+        stopCameraStream();
         setStatus(`Could not access camera: ${error.message}`, "error");
     }
+}
+
+startCamera.addEventListener("click", async () => {
+    await startCameraWithDevice(cameraSelect.value);
+});
+
+cameraSelect.addEventListener("change", async () => {
+    if (!cameraStream) return;
+    await startCameraWithDevice(cameraSelect.value);
 });
 
 captureCamera.addEventListener("click", () => {
@@ -256,6 +497,14 @@ captureCamera.addEventListener("click", () => {
         }
 
         analysisEpoch += 1;
+
+        // Camera and upload are alternative sources. Clearing the old upload
+        // prevents a previously selected file from being analysed by mistake
+        // after the user switches tabs.
+        imageFile.value = "";
+        uploadMeta.classList.add("hidden");
+        mobileCameraInput.value = "";
+
         capturedBlob = blob;
         originalImageBlob = blob;
         activeImageBlob = blob;
@@ -263,6 +512,27 @@ captureCamera.addEventListener("click", () => {
         await initialiseCropEditor(blob);
         queueAnalysis(true, true);
     }, "image/jpeg", 0.95);
+});
+
+mobileCameraInput.addEventListener("change", async () => {
+    const file = mobileCameraInput.files[0];
+    if (!file) return;
+
+    analysisEpoch += 1;
+    stopCameraStream();
+
+    // Clear any old upload because the current source is now the camera tab.
+    imageFile.value = "";
+    uploadMeta.classList.add("hidden");
+
+    capturedBlob = file;
+    originalImageBlob = file;
+    activeImageBlob = file;
+    currentFileName = file.name || "mobile_camera_capture.jpg";
+
+    await initialiseCropEditor(file);
+    setStatus("Photo captured. Analysing image…", "info");
+    queueAnalysis(true, true);
 });
 
 stopCamera.addEventListener("click", stopCameraStream);
@@ -276,6 +546,16 @@ function stopCameraStream() {
     captureCamera.disabled = true;
     stopCamera.disabled = true;
 }
+
+if (navigator.mediaDevices?.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", () => {
+        if (liveCameraSupported()) void refreshCameraList();
+    });
+}
+
+// Configure the camera UI immediately. On mobile HTTP this automatically
+// exposes the Take photo fallback instead of throwing a getUserMedia error.
+updateCameraAvailability();
 
 window.addEventListener("beforeunload", stopCameraStream);
 
@@ -652,6 +932,7 @@ function hasActiveImage() {
 function queueAnalysis(includeRipeness = true, immediate = false) {
     if (!hasActiveImage()) return;
 
+    setMobilePreviewUpdating(true);
     pendingAnalysis = true;
     pendingIncludeRipeness = pendingIncludeRipeness || includeRipeness;
     clearTimeout(analysisTimer);
@@ -683,7 +964,10 @@ async function flushAnalysisQueue() {
         renderResults(data, elapsedSeconds);
         setStatus("Analysis updated.", "success");
     } catch (error) {
-        if (epochAtStart === analysisEpoch) setStatus(error.message, "error");
+        if (epochAtStart === analysisEpoch) {
+            setStatus(error.message, "error");
+            setMobilePreviewUpdating(false);
+        }
     } finally {
         analysisInFlight = false;
         if (pendingAnalysis && hasActiveImage()) {
@@ -769,12 +1053,14 @@ function renderResults(data, elapsedSeconds) {
     renderMiniPipeline("top-banana-processing", data.processing.banana);
     renderMiniPipeline("top-blemish-processing", (data.processing.blemish || []).slice(0, 3));
     renderRipenessProcessing(data);
+    showMobilePreview(data, elapsedSeconds);
 
     document.getElementById("processing-placeholder").classList.add("hidden");
     document.getElementById("results-section").classList.remove("hidden");
 }
 
 function resetAnalysisUI() {
+    hideMobilePreview({ clearContent: true });
     document.getElementById("results-section").classList.add("hidden");
     document.getElementById("processing-placeholder").classList.remove("hidden");
 

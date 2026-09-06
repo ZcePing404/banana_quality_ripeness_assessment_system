@@ -43,3 +43,7 @@ The original `evaluation/evaluate_segmentation.py` is retained as an optional co
 ## Future ripeness-classification module
 
 The empty `machine_learning/ripeness_classification/` folders are reserved for the later ML component. The ML dataset should be split into training, validation and test sets at that stage rather than reusing the old Roboflow folder split automatically.
+
+
+Run on mobile
+Terminal: ipconfig

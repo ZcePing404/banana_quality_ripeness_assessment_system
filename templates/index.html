@@ -65,13 +65,47 @@
                 </div>
 
                 <div id="camera-panel" class="source-panel hidden">
-                    <div class="camera-tip">Position the banana clearly in the frame, then capture.</div>
-                    <video id="camera-video" autoplay playsinline></video>
-                    <canvas id="camera-canvas" class="hidden"></canvas>
-                    <div class="button-row">
-                        <button id="start-camera" class="secondary" type="button">Start camera</button>
-                        <button id="capture-camera" class="secondary" type="button" disabled>Capture frame</button>
-                        <button id="stop-camera" class="ghost" type="button" disabled>Stop</button>
+                    <div id="live-camera-area">
+                        <div class="camera-tip">Position the banana clearly in the frame, then capture.</div>
+
+                        <div class="camera-device-row">
+                            <label for="camera-select">Camera</label>
+                            <select id="camera-select" class="camera-select" aria-label="Choose camera">
+                                <option value="">Default camera</option>
+                            </select>
+                        </div>
+
+                        <video id="camera-video" autoplay playsinline muted></video>
+                        <canvas id="camera-canvas" class="hidden"></canvas>
+                        <div class="button-row">
+                            <button id="start-camera" class="secondary" type="button">Start camera</button>
+                            <button id="capture-camera" class="secondary" type="button" disabled>Capture frame</button>
+                            <button id="stop-camera" class="ghost" type="button" disabled>Stop</button>
+                        </div>
+                    </div>
+
+                    <div id="camera-fallback" class="camera-fallback hidden">
+                        <div class="camera-tip">
+                            Live camera preview is unavailable on this connection. On a phone, use
+                            <strong>Take photo</strong>; the captured photo will be analysed the same way.
+                        </div>
+                        <label class="upload-box" for="mobile-camera-input">
+                            <span class="upload-symbol" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/>
+                                    <circle cx="12" cy="13" r="3.5"/>
+                                </svg>
+                            </span>
+                            <strong>Take photo</strong>
+                            <span>Uses the phone camera when supported</span>
+                        </label>
+                        <input
+                            id="mobile-camera-input"
+                            class="file-input"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                        >
                     </div>
                 </div>
 
@@ -110,6 +144,14 @@
                         </svg>
                     </button>
                 </div>
+
+                <label class="mobile-live-toggle" for="mobile-live-toggle">
+                    <input id="mobile-live-toggle" type="checkbox">
+                    <span class="mobile-live-toggle-copy">
+                        <strong>Show live result while adjusting</strong>
+                        <small>Keep the latest result visible at the bottom of the screen.</small>
+                    </span>
+                </label>
 
                 <div class="settings-group banana-group">
                     <div class="settings-title">
@@ -260,11 +302,11 @@
                 <aside class="result-facts" aria-label="Assessment values">
                     <div class="result-stat">
                         <div class="result-icon" aria-hidden="true">
-                            <svg viewBox="0 0 64 64" fill="none">
-                                <path d="M42 11c4 1 7 5 8 9-5 1-8 0-11-3 1-3 1-5 3-6Z"/>
-                                <path d="M18 47c8 5 20 3 27-5 7-8 9-18 6-25-3 1-7 2-10 1-1 8-5 15-11 19-6 4-13 5-20 2 1 3 4 6 8 8Z"/>
-                                <path d="M13 39c6 2 12 2 17-1"/>
-                            </svg>
+                            <img
+                                src="{{ url_for('static', filename='images/banana_icon.png') }}"
+                                alt=""
+                                class="result-icon-image banana-result-icon"
+                            >
                         </div>
                         <div class="result-copy">
                             <span>Ripeness</span>
@@ -274,14 +316,11 @@
                     </div>
                     <div class="result-stat">
                         <div class="result-icon" aria-hidden="true">
-                            <svg viewBox="0 0 64 64" fill="none">
-                                <circle cx="32" cy="32" r="21"/>
-                                <circle cx="24" cy="24" r="2.6" class="fill-dot"/>
-                                <circle cx="39" cy="22" r="2.6" class="fill-dot"/>
-                                <circle cx="20" cy="38" r="2.6" class="fill-dot"/>
-                                <circle cx="36" cy="35" r="2.6" class="fill-dot"/>
-                                <circle cx="43" cy="43" r="2.6" class="fill-dot"/>
-                            </svg>
+                            <img
+                                src="{{ url_for('static', filename='images/blemish_icon.png') }}"
+                                alt=""
+                                class="result-icon-image blemish-result-icon"
+                            >
                         </div>
                         <div class="result-copy">
                             <span>Visible blemish</span>
@@ -291,11 +330,11 @@
                     </div>
                     <div class="result-stat">
                         <div class="result-icon" aria-hidden="true">
-                            <svg viewBox="0 0 64 64" fill="none">
-                                <path d="M32 11 38 15l7-1 3 6 6 4-1 7 3 6-5 5-1 7-7 1-5 5-6-3-6 3-5-5-7-1-1-7-5-5 3-6-1-7 6-4 3-6 7 1 6-4Z"/>
-                                <path d="m24 51-3 9 8-4 3 5 3-10M40 51l3 9-8-4-3 5"/>
-                                <path d="m24 32 5 5 11-12"/>
-                            </svg>
+                            <img
+                                src="{{ url_for('static', filename='images/quality_icon.png') }}"
+                                alt=""
+                                class="result-icon-image quality-result-icon"
+                            >
                         </div>
                         <div class="result-copy">
                             <span>Surface quality</span>
@@ -319,6 +358,44 @@
             </div>
         </section>
     </main>
+
+    <aside id="mobile-live-preview" class="mobile-live-preview hidden" aria-live="polite" aria-label="Live analysis preview">
+        <div class="mobile-live-preview-header">
+            <div class="mobile-live-preview-title">
+                <strong>Live result</strong>
+                <span id="mobile-preview-state">Ready</span>
+            </div>
+            <div class="mobile-live-preview-actions">
+                <span class="mobile-live-badge">Updates with settings</span>
+                <button id="mobile-preview-close" class="mobile-live-close" type="button" aria-label="Close live result" title="Close live result">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="mobile-live-preview-body">
+            <div class="mobile-live-image-wrap">
+                <img id="mobile-preview-image" alt="Live final analysis output">
+            </div>
+
+            <div class="mobile-live-metrics">
+                <div class="mobile-live-metric">
+                    <span>Ripeness</span>
+                    <strong id="mobile-preview-ripeness">—</strong>
+                </div>
+                <div class="mobile-live-metric">
+                    <span>Blemish</span>
+                    <strong id="mobile-preview-blemish">—</strong>
+                </div>
+                <div class="mobile-live-metric">
+                    <span>Quality</span>
+                    <strong id="mobile-preview-quality">—</strong>
+                </div>
+            </div>
+        </div>
+    </aside>
 
     <footer class="footer">
         Banana Quality and Ripeness Assessment System
