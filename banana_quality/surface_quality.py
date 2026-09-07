@@ -24,7 +24,7 @@ def blemish_percentage(banana_mask: np.ndarray, blemish_mask: np.ndarray) -> flo
 
 def quality_grade(percentage: float) -> str:
     """Simple surface-quality bands retained from the earlier project."""
-    if percentage <= 1.0:
+    if percentage < 1.0:
         return "Extra"
     if percentage <= 5.0:
         return "Class I"

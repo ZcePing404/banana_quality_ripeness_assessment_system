@@ -393,6 +393,10 @@ for (const radio of document.querySelectorAll('input[name="source"]')) {
 
         if (source !== "video") {
             stopVideoAnalysis({ silent: true });
+        } else {
+            // Uploaded-video analysis remains available everywhere, but live
+            // camera analysis is disabled on insecure/unsupported connections.
+            setVideoButtons(videoRunning);
         }
     });
 }
@@ -2133,7 +2137,16 @@ function resetVideoFrameSelection() {
 
 function setVideoButtons(running) {
     if (videoStartButton) videoStartButton.disabled = running;
-    if (videoCameraButton) videoCameraButton.disabled = running;
+
+    const liveSupported = liveCameraSupported();
+    if (videoCameraButton) {
+        videoCameraButton.disabled = running || !liveSupported;
+        videoCameraButton.title = liveSupported
+            ? "Analyse frames continuously from the live camera."
+            : "Live camera analysis requires a secure HTTPS/localhost connection. Upload a video on this device instead.";
+        videoCameraButton.setAttribute("aria-disabled", String(videoCameraButton.disabled));
+    }
+
     if (videoStopButton) videoStopButton.disabled = !running;
     // A frame must first be analysed. Stop the stream before preserving it so
     // the user knows exactly which still frame is being added to the batch.
@@ -2344,8 +2357,11 @@ async function runUploadedVideoAnalysis() {
 }
 
 async function runLiveVideoAnalysis() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus("Live camera analysis is unavailable in this browser or connection.", "error");
+    if (!liveCameraSupported()) {
+        const message = "Live camera analysis is unavailable on this connection. On mobile/local HTTP, upload a recorded video instead.";
+        if (videoStatus) videoStatus.textContent = message;
+        setStatus(message, "info");
+        setVideoButtons(false);
         return;
     }
 
@@ -2502,6 +2518,11 @@ async function addCurrentVideoFrameToBatch() {
         setVideoButtons(videoRunning);
     }
 }
+
+// Apply browser/connection availability immediately. This keeps Start live
+// analysis visibly disabled on mobile local-HTTP connections while leaving
+// uploaded-video analysis enabled.
+setVideoButtons(false);
 
 if (videoStartButton) videoStartButton.addEventListener("click", () => void runUploadedVideoAnalysis());
 if (videoCameraButton) videoCameraButton.addEventListener("click", () => void runLiveVideoAnalysis());

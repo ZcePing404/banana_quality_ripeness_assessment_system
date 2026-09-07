@@ -127,11 +127,7 @@ def _compact_processing_images(
     result: dict[str, object],
     overlay: np.ndarray,
 ) -> dict[str, list[dict[str, str]]]:
-    """Return only the stages shown in the redesigned UI.
 
-    Keeping the response compact matters for live slider updates: the browser no
-    longer receives the old full diagnostics, cluster tables or unused stages.
-    """
     prepared = result["prepared"]
     blemish_steps = result["blemish_steps"]
 
@@ -285,16 +281,6 @@ def analyse():
         ripeness_confidence: float | None = None
 
         if include_ripeness:
-            # The two classifiers intentionally receive different inputs:
-            #
-            # baseline  -> original/cropped BGR image directly
-            # segmented -> same image after the final shared banana mask is
-            #              applied and the outside background is replaced
-            #              with white.
-            #
-            # Note: analyse_image() still runs because the application's
-            # surface-quality/blemish modules require the banana mask even
-            # when the BASELINE ripeness classifier is selected.
             ripeness_result = classify_ripeness(
                 image,
                 banana_mask=result["banana_mask"],

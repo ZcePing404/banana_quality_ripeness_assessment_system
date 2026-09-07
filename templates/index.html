@@ -124,7 +124,7 @@
                 <div id="video-panel" class="source-panel hidden">
                     <div class="video-input-card">
                         <div class="camera-tip">
-                            Analyse an uploaded video frame-by-frame, or start live camera analysis. Stop on a useful frame, then add that frame to Batch Assessment for crop, calibration and manual tuning.
+                            Analyse an uploaded video frame-by-frame. Live camera analysis is available only when the browser provides secure camera access; on mobile local-HTTP connections, upload a recorded video instead. Stop on a useful frame, then add that frame to Batch Assessment for crop, calibration and manual tuning.
                         </div>
                         <label class="upload-box compact-upload" for="video-file">
                             <span class="upload-symbol" aria-hidden="true">
@@ -144,7 +144,7 @@
                             <button id="video-stop" type="button" class="ghost" disabled>Stop &amp; freeze</button>
                             <button id="video-add-frame" type="button" class="secondary" disabled>Add current frame to batch</button>
                         </div>
-                        <p id="video-status" class="video-status">Select a video or start live analysis. Sampled frames update the Final Assessment but are not stored automatically. Use Add current frame to batch to keep a specific frame.</p>
+                        <p id="video-status" class="video-status">Select a video to analyse sampled frames. Start live analysis is enabled only when secure live-camera access is available. Frames are not stored automatically; use Add current frame to batch to keep a specific frame.</p>
                     </div>
                 </div>
 

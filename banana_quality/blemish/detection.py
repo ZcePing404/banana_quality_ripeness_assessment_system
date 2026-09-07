@@ -16,21 +16,8 @@ def blemish_mask_from_prepared(
     closing_kernel_size: int = 5,
     config: ProcessingConfig | None = None,
 ) -> dict[str, object]:
-    """Detect blemish regions inside one segmented banana.
+    # Detect blemish regions inside one segmented banana.
 
-    Main detector
-    -------------
-    A second K-means is run ONLY on pixels inside the banana. The clustering
-    features are CIELAB a,b, deliberately excluding L from K-means so gradual
-    brightness changes caused by shadow influence the clustering much less.
-
-    The healthiest-looking colour-cluster family becomes the adaptive healthy
-    peel reference. Other clusters are classified by a,b chroma distance from
-    that healthy family.
-
-    The final blemish detector uses the second-stage K-means candidate,
-    bright-highlight exclusion, morphology, and small-component filtering.
-    """
     config = config or ProcessingConfig()
     blurred = np.asarray(prepared["blurred"], dtype=np.uint8)
     banana = np.where(banana_mask > 0, 255, 0).astype(np.uint8)
@@ -62,8 +49,7 @@ def blemish_mask_from_prepared(
             "blemish_closing_kernel": closing_kernel,
         }
 
-    # Ignore a very thin outer peel boundary because object edges naturally
-    # become darker. If erosion leaves too little banana, use the whole mask.
+    # Ignore a very thin outer peel boundary
     inner_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     inner = cv2.erode(banana, inner_kernel, iterations=1)
     if int((inner > 0).sum()) < 100:
@@ -77,9 +63,7 @@ def blemish_mask_from_prepared(
     _, saturation, value = cv2.split(hsv)
     inside = inner > 0
 
-    # ------------------------------------------------------------------
     # SECOND-STAGE K-MEANS: banana pixels only, using Lab a,b only.
-    # ------------------------------------------------------------------
     inside_pixels = int(inside.sum())
     requested_k = max(2, int(config.blemish_kmeans_k))
     k = min(requested_k, inside_pixels)
@@ -107,8 +91,7 @@ def blemish_mask_from_prepared(
     cluster_label_map = np.full(inner.shape, -1, dtype=np.int16)
     cluster_label_map[inside] = labels_flat.astype(np.int16)
 
-    # Build a cluster summary. "Healthy score" rewards stronger yellow b and
-    # greener/lower a. L is deliberately NOT included so shadows are not
+    # Build a cluster summary. "Healthy score" rewards stronger yellow b and greener/lower a. L is deliberately NOT included so shadows are not
     # automatically treated as a different peel type.
     cluster_summary: list[dict[str, float | int | bool]] = []
     total_inside = max(1, inside_pixels)
@@ -202,9 +185,7 @@ def blemish_mask_from_prepared(
 
     healthy = inside & np.isin(cluster_label_map, healthy_cluster_ids)
 
-    # ------------------------------------------------------------------
     # REGION CANDIDATE FROM SECOND K-MEANS
-    # ------------------------------------------------------------------
     region_candidate = inside & np.isin(
         cluster_label_map,
         blemish_cluster_ids,
@@ -232,11 +213,7 @@ def blemish_mask_from_prepared(
     final_mask = _remove_tiny_components(closed, minimum_area)
     final_mask[banana == 0] = 0
 
-    # ------------------------------------------------------------------
     # DEBUG/VISUALISATION OUTPUTS
-    # ------------------------------------------------------------------
-    # Recolour only a,b by the second-stage centres while preserving L.
-    # This lets the user see chroma groups without pretending L was clustered.
     quant_lab = lab.copy()
     for cluster_id in range(int(k)):
         cluster_mask = cluster_label_map == cluster_id
