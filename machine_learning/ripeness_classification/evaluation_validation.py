@@ -19,17 +19,11 @@ from sklearn.metrics import (
 import tensorflow as tf
 import tf_keras
 
-
-# ============================================================
 # CONFIGURATION
-# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# ------------------------------------------------------------
 # CHANGE THESE TWO VALUES depending on which model you test
-# ------------------------------------------------------------
-
 MODEL_DIR = BASE_DIR / "models" / "segmented"
 
 VALID_DIR = (
@@ -57,19 +51,10 @@ SUPPORTED_EXTENSIONS = {
     ".bmp"
 }
 
-
-# ============================================================
 # TEACHABLE MACHINE MODEL COMPATIBILITY
-# ============================================================
-
 class CompatibleDepthwiseConv2D(
     tf_keras.layers.DepthwiseConv2D
 ):
-    """
-    Compatibility layer for some Teachable Machine
-    exported H5 models.
-    """
-
     def __init__(
         self,
         *args,
@@ -82,21 +67,9 @@ class CompatibleDepthwiseConv2D(
         )
 
 
-# ============================================================
 # LOAD LABELS
-# ============================================================
 
 def load_labels(labels_path):
-    """
-    Teachable Machine labels may look like:
-
-    0 Overripe
-    1 Ripe
-    2 Unripe
-
-    This function removes the numeric prefix.
-    """
-
     labels = []
 
     with open(
@@ -129,25 +102,9 @@ def load_labels(labels_path):
 
     return labels
 
-
-# ============================================================
 # IMAGE PREPROCESSING
-# ============================================================
 
 def preprocess_image(image_path):
-    """
-    Use the same preprocessing expected by
-    the Teachable Machine model:
-
-    RGB
-        ↓
-    224 × 224
-        ↓
-    float32
-        ↓
-    normalize to [-1, 1]
-    """
-
     with Image.open(image_path) as image:
 
         image = image.convert("RGB")
@@ -176,11 +133,7 @@ def preprocess_image(image_path):
 
     return image_array
 
-
-# ============================================================
 # LOAD MODEL
-# ============================================================
-
 def load_model():
 
     print("Loading model:")
@@ -198,9 +151,7 @@ def load_model():
     return model
 
 
-# ============================================================
 # COLLECT VALIDATION IMAGES
-# ============================================================
 
 def collect_images(valid_dir, class_names):
 
@@ -246,11 +197,7 @@ def collect_images(valid_dir, class_names):
 
     return records
 
-
-# ============================================================
 # RUN VALIDATION
-# ============================================================
-
 def evaluate():
 
     OUTPUT_DIR.mkdir(
@@ -398,9 +345,7 @@ def evaluate():
         "predicted_label"
     ]
 
-    # ========================================================
     # OVERALL METRICS
-    # ========================================================
 
     accuracy = accuracy_score(
         y_true,
@@ -472,10 +417,7 @@ def evaluate():
         index=False
     )
 
-    # ========================================================
     # CLASSIFICATION REPORT
-    # ========================================================
-
     report = classification_report(
         y_true,
         y_pred,
@@ -494,9 +436,7 @@ def evaluate():
         / "validation_classification_report.csv"
     )
 
-    # ========================================================
     # CONFUSION MATRIX
-    # ========================================================
 
     matrix = confusion_matrix(
         y_true,
@@ -526,10 +466,6 @@ def evaluate():
     )
 
     plt.close()
-
-    # ========================================================
-    # PRINT RESULTS
-    # ========================================================
 
     print()
     print("=" * 60)
@@ -586,11 +522,6 @@ def evaluate():
         f"Results saved to:\n"
         f"{OUTPUT_DIR}"
     )
-
-
-# ============================================================
-# MAIN
-# ============================================================
 
 if __name__ == "__main__":
     evaluate()

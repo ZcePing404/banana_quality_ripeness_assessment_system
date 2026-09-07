@@ -1,15 +1,3 @@
-"""Line-based spatial calibration helpers.
-
-This simplified calibration workflow uses two user-selected points that span a
-known physical reference length on the same approximately flat surface as the
-banana. The two points establish a pixels-per-centimetre scale. That scale is
-then combined with the final banana mask to estimate the banana's overall
-length and width from a rotated bounding rectangle.
-
-Unlike the earlier square-reference version, this module does not perform
-perspective rectification. It only provides spatial scaling.
-"""
-
 from __future__ import annotations
 
 import cv2

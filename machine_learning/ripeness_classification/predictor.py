@@ -1,10 +1,3 @@
-"""Teachable Machine banana-ripeness inference helpers.
-
-The exported Teachable Machine H5 model is an older Keras-format model.  The
-project therefore loads it with ``tf_keras`` (legacy Keras) instead of the
-Keras 3 loader bundled with recent TensorFlow releases.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -73,12 +66,7 @@ def load_ripeness_model(
     model_path: str | Path,
     labels_path: str | Path,
 ):
-    """Load the exported Teachable Machine H5 model with legacy TF-Keras.
-
-    ``CompatibleDepthwiseConv2D`` discards the old ``groups=1`` setting that
-    can appear in Teachable Machine H5 exports and is rejected by newer layer
-    implementations.
-    """
+    # Load the exported Teachable Machine H5 model with legacy TF-Keras."
     try:
         import tf_keras
     except ImportError as exc:

@@ -7,10 +7,7 @@ try:
 except ImportError:  # Allows: python segment_dataset.py
     from segmentation import segment_banana
 
-
-# ============================================================
 # DATASET CONFIGURATION
-# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -37,9 +34,7 @@ SUPPORTED_EXTENSIONS = {
     ".png",
     ".bmp",
 }
-# ============================================================
 # PROCESS SINGLE IMAGE
-# ============================================================
 
 def process_image(input_path, output_path, mask_path):
 
@@ -72,11 +67,6 @@ def process_image(input_path, output_path, mask_path):
     )
 
     return True
-
-
-# ============================================================
-# PROCESS DATASET
-# ============================================================
 
 def process_dataset():
 
@@ -190,11 +180,6 @@ def process_dataset():
         "Binary masks saved to:"
     )
     print(MASK_ROOT)
-
-
-# ============================================================
-# MAIN
-# ============================================================
 
 if __name__ == "__main__":
     process_dataset()

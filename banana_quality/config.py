@@ -1,5 +1,3 @@
-"""Configuration values for the classical banana image-processing pipeline."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

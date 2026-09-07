@@ -1,5 +1,3 @@
-"""Common image preparation used by segmentation and blemish analysis."""
-
 from __future__ import annotations
 
 import cv2
@@ -35,7 +33,7 @@ def _common_preprocess(
     )
     enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
 
-    # 3. Gaussian filtering reduces small image noise before clustering.
+    # Gaussian filtering reduces small image noise before clustering.
     blur_kernel = odd_kernel(config.gaussian_kernel)
     blurred = cv2.GaussianBlur(
         enhanced,
@@ -43,8 +41,7 @@ def _common_preprocess(
         0,
     )
 
-    # 4. Lab is useful for colour clustering; HSV is useful for broad
-    # banana-colour rules used when selecting K-means clusters.
+    # Lab is useful for colour clustering; HSV is useful for broad banana-colour rules used when selecting K-means clusters.
     lab_u8 = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
@@ -62,10 +59,6 @@ def prepare_blemish_image(
     image_bgr: np.ndarray,
     config: ProcessingConfig | None = None,
 ) -> dict[str, object]:
-    """Prepare an image for blemish analysis without running banana segmentation.
-
-    This is useful during evaluation when a ground-truth banana mask is supplied
-    so the blemish module can be measured independently from banana segmentation.
-    """
+    """Prepare an image for blemish analysis."""
     config = config or ProcessingConfig()
     return _common_preprocess(image_bgr, config)

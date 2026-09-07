@@ -1,5 +1,3 @@
-"""Small visualisation helpers for banana quality output."""
-
 from __future__ import annotations
 
 import cv2

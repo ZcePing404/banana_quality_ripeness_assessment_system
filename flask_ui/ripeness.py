@@ -1,5 +1,3 @@
-"""Flask bridge for baseline and segmented Teachable Machine classifiers."""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -65,30 +63,7 @@ def classify_ripeness(
     *,
     method: str = "baseline",
 ) -> dict[str, object]:
-    """Classify one banana using the selected trained model.
-
-    BASELINE pipeline
-    -----------------
-        original/cropped image
-            -> Teachable Machine preprocessing
-            -> baseline model
-
-    The baseline branch does NOT call apply_banana_mask() and therefore does
-    not perform background removal for ripeness classification.
-
-    SEGMENTED pipeline
-    ------------------
-        original/cropped image
-            -> final shared K-means banana mask
-            -> white background outside the banana
-            -> Teachable Machine preprocessing
-            -> segmented model
-
-    The segmented branch reuses the final banana mask already produced by
-    banana_quality.pipeline.analyse_image(); it does not run a second K-means
-    segmentation.
-    """
-
+    # Run a Teachable Machine ripeness classifier on an image.
     method = str(method).strip().lower()
 
     if method not in {"baseline", "segmented"}:

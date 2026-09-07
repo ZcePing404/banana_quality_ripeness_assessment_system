@@ -1,13 +1,3 @@
-"""Banana segmentation helpers for ripeness-classification preprocessing.
-
-This module now reuses the project's shared K-means banana-mask algorithm.
-GrabCut and the old fixed ``K = 4`` preprocessing have been removed.
-
-For Streamlit, the banana mask is created once by the surface-quality pipeline
-using the current sidebar K value.  That exact mask is then applied here so
-both blemish analysis and ripeness classification use the same banana region.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -67,12 +57,6 @@ def apply_banana_mask(
     image_bgr: np.ndarray,
     banana_mask: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Apply an already-computed shared banana mask for ripeness input.
-
-    This is the function used by Streamlit.  It does not run another K-means
-    pass and it does not use GrabCut.  Therefore the ripeness classifier sees
-    the same banana boundary used by blemish analysis.
-    """
     if image_bgr is None or image_bgr.size == 0:
         raise ValueError("Cannot prepare an empty image for ripeness classification.")
 
@@ -90,14 +74,6 @@ def segment_banana(
     closing_kernel_size: int | None = None,
     config: ProcessingConfig | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Create a banana mask with the shared K-means algorithm.
-
-    ``kmeans_k`` is configurable rather than fixed at 4.  If omitted, the
-    project's tuned ``ProcessingConfig`` default is used.  This helper is
-    useful for regenerating segmented training/validation/test images.  The
-    interactive Streamlit application instead passes its already-computed mask
-    to :func:`apply_banana_mask` so the mask is generated only once.
-    """
     if image_bgr is None or image_bgr.size == 0:
         raise ValueError("Cannot segment an empty image.")
 

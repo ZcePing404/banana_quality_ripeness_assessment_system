@@ -1,5 +1,3 @@
-"""Flask entry point for banana surface-quality and ripeness assessment."""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -28,11 +26,6 @@ app = Flask(
     static_folder=str(PROJECT_ROOT / "static"),
 )
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _decode_uploaded_image(raw_bytes: bytes) -> np.ndarray:
     if not raw_bytes:
@@ -172,11 +165,6 @@ def _compact_processing_images(
         ],
     }
 
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
 @app.get("/")
 def index():
     return render_template("index.html", defaults=_defaults())
@@ -264,9 +252,6 @@ def analyse():
             overlay = draw_measurement_box(overlay, measurement)
             calibration = {"applied": True, **{key: float(measurement[key]) for key in ("length_cm", "width_cm", "pixels_per_cm")}}
 
-        # Batch uploads request a compact response so dozens of results do not
-        # keep several base64 diagnostic images in browser memory.  The same
-        # /api/analyse endpoint still processes exactly one image per request.
         images = {
             "overlay": _encode_image_data_url(overlay),
         }
@@ -329,8 +314,6 @@ def analyse():
                 },
             }
         else:
-            # Keep the previous prediction in the browser when only settings
-            # unrelated to the selected ripeness classifier have changed.
             ripeness_payload = {
                 "skipped": True,
                 "available": None,

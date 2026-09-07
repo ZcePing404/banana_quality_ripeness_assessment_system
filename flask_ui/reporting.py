@@ -1,10 +1,3 @@
-"""Simple PDF export for banana assessment results.
-
-The report intentionally mirrors the four result cards shown by the web UI:
-ripeness, visible blemish, surface quality, and estimated size.  Each successful
-assessment gets its own page containing only the report title, image name, final
-output image, and those four measurements.
-"""
 from __future__ import annotations
 
 from io import BytesIO

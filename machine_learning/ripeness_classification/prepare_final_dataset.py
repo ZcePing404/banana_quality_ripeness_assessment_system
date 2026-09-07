@@ -1,61 +1,3 @@
-"""
-prepare_final_clean_dataset.py
-
-FINAL ONE-FILE WORKFLOW FOR BANANA RIPENESS DATASET
-
-Flow
-----
-1. Read the ORIGINAL split folders:
-       data/raw/train
-       data/raw/valid
-       data/raw/test
-
-2. Read each split's *_classes.csv / _classes.csv and create a fresh:
-       data/raw_by_class/
-           train/{Unripe,Ripe,Overripe,Rotten}
-           valid/{Unripe,Ripe,Overripe,Rotten}
-           test/{Unripe,Ripe,Overripe,Rotten}
-
-3. Audit the ACTUAL class-organised dataset (raw_by_class) for
-   cross-split leakage:
-       train <-> valid
-       train <-> test
-       valid <-> test
-
-4. Clean using priority:
-       train > valid > test
-
-   Therefore:
-       train <-> valid -> keep train, move valid
-       train <-> test  -> keep train, move test
-       valid <-> test  -> keep valid, move test
-
-5. Quarantine excluded duplicates under:
-       data/raw_by_class/_removed_cross_split_duplicates/
-
-6. Re-audit AFTER cleaning.
-
-7. Write final class counts and audit reports.
-
-IMPORTANT
----------
-- data/raw is NEVER modified.
-- raw_by_class is generated fresh.
-- If an old raw_by_class already exists, it is backed up with a timestamp.
-- The final BASELINE evaluation dataset should be data/raw_by_class.
-- data/segmented should later be generated FROM this cleaned raw_by_class.
-
-Requirements
-------------
-    pip install pillow imagehash numpy
-
-Place this file inside:
-    machine_learning/ripeness_classification/
-
-Run:
-    python prepare_final_clean_dataset.py
-"""
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -69,10 +11,7 @@ import numpy as np
 from PIL import Image, ImageOps, ImageDraw
 import imagehash
 
-
-# ============================================================
 # CONFIGURATION
-# ============================================================
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "data"
